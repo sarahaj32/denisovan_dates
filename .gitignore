@@ -1,0 +1,9 @@
+data/
+.snakemake/
+logs/
+src/__pycache__/
+.ipynb_checkpoints/
+.Rproj.user/
+simdat/
+.Rdata
+.Rhistory
