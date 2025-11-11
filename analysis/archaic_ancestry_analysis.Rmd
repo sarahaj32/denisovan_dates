@@ -1,0 +1,654 @@
+---
+title: "Archaic Ancestry"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(tidyverse)
+library(data.table)
+```
+
+```{r, echo = F}
+label_region <- function(dat){
+  Oceania <- c("Oceania", "OCEANIA")
+  SouthAsia <- c("BEB", "STU", "PJL", "ITU", "GIH", "SouthAsia", "North", "South", "East", "Central", "West", "North-East", "West", "Other", "CENTRAL_SOUTH_ASIA")
+  EastAsia <- c("East Asia", "JPT", "CHB", "CHS", "CDX", "KHV", "NortheastAsia", "EAST_ASIA")
+  Americas <- c("AMERICA", "CLM", "PUR", "MXL", "PEL")
+  MiddleEast <- c("MIDDLE_EAST")
+  Europe <- c("GBR", "FIN", "TSI", "CEU", "IBS", "EUROPE")
+  SoutheastAsia <- c("SoutheastAsia", "Southeast Asia")
+  dat$Region <- ifelse(dat$population %in% Oceania, "Oceania", 
+                          ifelse(dat$population %in% SouthAsia, "SouthAsia", 
+                                 ifelse(dat$population %in% EastAsia, "EastAsia", 
+                                        ifelse(dat$population %in% MiddleEast, "MiddleEast", 
+                                               ifelse(dat$population %in% Americas, "Americas",
+                                                 ifelse(dat$population %in% Europe, "Europe",
+                                                        ifelse(dat$population %in% SoutheastAsia, "SouthEastAsia", "Unlabled")))))))
+  return(dat)
+}
+```
+
+In this notebook, I will analyze jointly all of the archaic ancestry of worldwide populations.
+I'm really focused here on Denisovan, but will also use Neanderthal to make sure that things are consistent with other publications.
+
+```{r, echo = F}
+class1 <- data.frame()
+class1LS <- data.frame()
+class2 <- data.frame()
+
+for (dataset in c("1000G", "choin", "GAv1", "HGDP", "LASI", "choin_hg19")){
+  dat_class1 <- read.table(paste0("summary_dat/hmmix/", dataset, "_class1_perIndiv.txt"), header =T, sep = "\t")
+  dat_class1$dataset <- dataset
+  class1 <- rbindlist(list(class1, dat_class1), use.names = T, fill = T)
+
+  
+    dat_class1LS <- read.table(paste0("summary_dat/hmmix/", dataset, "_class1LS_perIndiv.txt"), header =T, sep = "\t")
+  dat_class1LS$dataset <- dataset
+  class1LS <- rbindlist(list(class1LS, dat_class1LS), use.names = T, fill = T)
+  
+      dat_class2 <- read.table(paste0("summary_dat/hmmix/", dataset, "_class2_perIndiv.txt"), header =T, sep = "\t")
+  dat_class2$dataset <- dataset
+  class2 <- rbindlist(list(class2, dat_class2), use.names = T, fill = T)
+}
+
+rm(dat_class1)
+rm(dat_class1LS)
+rm(dat_class2)
+
+class1 <- label_region(class1)
+class1LS <- label_region(class1LS)
+class2 <- label_region(class2)
+```
+
+First I want to compare my results to Laurits' from the Lasi-dad supplement. Using his annotations, I recover slightly less but never more than 1Mb less. When I use my own annotations again I recover slightly less. I believe this is because I use positions that pass the combined archaic mask.
+
+Using my method, I recover on average 5% less of Denisovan ancestry and 2% less of Neanderthal. I'm not worried by this, and am mostly happy that the numbers are consistent. My method is clearly working!!!
+```{r}
+LS <- read.table("summary_dat/hmmix/LASIDAD_supp6.txt", sep = "\t", header = T)
+LS$Segment.type <- ifelse(LS$Segment.type == "none", "None", LS$Segment.type)
+
+LASI_class1LS_comp <- class1LS %>% group_by(ID, population, class_1, dataset) %>% 
+  summarize(amount = sum(amount)) %>% 
+  ungroup %>%
+  group_by(population, class_1, dataset) %>% 
+  summarize(avg = round(mean(amount) / 1000000, 1)) %>% 
+  filter(dataset == "LASI") %>%
+  rename("Segment.type" = class_1, "Region" = population) %>%
+  merge(filter(LS, class == "class1", dataset == "LASIDAD"), by = c("Segment.type", "Region")) 
+
+p_LS <- ggplot(LASI_class1LS_comp, aes(x = Segment.type, y = (X0.8 - avg))) +
+  geom_boxplot() +
+  theme_bw() + 
+  labs(x = "Fragment", y = "Laurits - Sarah", title = "Using Laurits' annotations")
+plot(p_LS)
+
+p_LS_per <- ggplot(LASI_class1LS_comp, aes(x = Segment.type, y = (X0.8 - avg) / X0.8 * 100)) +
+  geom_boxplot() +
+  theme_bw() + 
+  labs(x = "Fragment", y = "% of Laurits recovered\nThat I miss", title = "Using Laurits' annotations")
+plot(p_LS_per)
+
+LASI_class1_comp <- class1 %>% group_by(ID, population, class_1, dataset) %>% 
+  summarize(amount = sum(amount)) %>% 
+  ungroup %>%
+  group_by(population, class_1, dataset) %>% 
+  summarize(avg = round(mean(amount) / 1000000, 1)) %>% 
+  filter(dataset == "LASI") %>%
+  rename("Segment.type" = class_1, "Region" = population) %>%
+  merge(filter(LS, class == "class1", dataset == "LASIDAD"), by = c("Segment.type", "Region")) 
+
+p_c1 <- ggplot(LASI_class1_comp, aes(x = Segment.type, y = (X0.8 - avg))) +
+  geom_boxplot() +
+  theme_bw() + 
+  labs(x = "Fragment", y = "Laurits - Sarah", title = "Using My own Annotations and Mask")
+plot(p_c1)
+
+p_c1_per <- ggplot(LASI_class1_comp, aes(x = Segment.type, y = (X0.8 - avg) / X0.8 * 100)) +
+  geom_boxplot() +
+  theme_bw() + 
+  labs(x = "Fragment", y = "% of Laurits recovered\nThat I miss", title = "Using My own Annotations and Mask")
+plot(p_c1_per)
+```
+
+Also look at worldwide populations 
+```{r}
+WW_class1LS_comp <- class1LS %>% filter(dataset != "LASI") %>% 
+  group_by(population, class_1, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(class_1, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000)  %>% 
+  rename("Segment.type" = class_1) %>%
+  merge(filter(LS, class == "class1", dataset == "WW"), by = c("Segment.type", "Region")) 
+
+p_c1 <- ggplot(WW_class1LS_comp, aes(x = Segment.type, y = (X0.8 - avg))) +
+  geom_boxplot() +
+  theme_bw() + 
+  labs(x = "Fragment", y = "Laurits - Sarah", title = "Using My own Annotations and Mask") + 
+  facet_wrap(~Region)
+plot(p_c1)
+```
+
+Now I want to look at how much Denisovan per individual
+```{r}
+# Ensure Region has a defined order
+class1$Region <- factor(class1$Region, levels = c("Americas", "Europe", "MiddleEast", "SouthAsia", "EastAsia", "SouthEastAsia", "Oceania"))
+
+# Arrange populations by Region and then convert to factor
+pop_levels <- class1 %>% 
+  distinct(population, Region) %>% 
+  arrange(Region, population) %>% 
+  pull(population)
+class1$population <- factor(class1$population, levels = pop_levels)
+
+# finally order the classifications
+class1$class_1 <- factor(class1$class_1, levels = c("Neanderthal", "Denisova", "Both", "None"), ordered = T)
+
+p_hap <- class1 %>% group_by(population, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Haplotype\nClass 1: Most Likely", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_1 ~ dataset, scales = "free", space = "free_x")
+plot(p_hap)
+
+p_all <- class1 %>% 
+  #rename choin oceania so there's no overlap
+  mutate(population = ifelse(grepl("choin", dataset) & Region == "Oceania", "oceania", as.character(population))) %>%
+  group_by(population, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population, y = avg, fill = dataset)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of All Inferred Archaic Ancestry per Individual\n", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(. ~ Region, scales = "free", space = "free_x")
+plot(p_all)
+
+p_ind <- class1 %>% group_by(population, class_1, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 1: Most Likely", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_1 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind)
+
+p_ind_frac <- class1 %>% group_by(population, class_1, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 1: Most Likely", y = "Archaic Ancestry (%)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_1 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind_frac)
+
+class1 %>% group_by(ID, population, Region, dataset, class_1) %>%
+  summarize(amount = sum(amount)) %>%
+  pivot_wider(names_from = class_1, values_from = amount) %>%
+  ggplot(aes(x = Denisova, y = Both, color = dataset)) +
+    theme_bw() +
+    geom_point()
+
+class1 %>% group_by(ID, population, Region, dataset, class_1) %>%
+  summarize(amount = sum(amount)) %>%
+  pivot_wider(names_from = class_1, values_from = amount) %>%
+  ggplot(aes(x = Denisova, y = None, color = dataset)) +
+    geom_point()
+
+class1 %>% group_by(ID, population, Region, dataset, class_1) %>%
+  summarize(amount = sum(amount)) %>%
+  pivot_wider(names_from = class_1, values_from = amount) %>%
+  ggplot(aes(x = Denisova / 1000000, y = Neanderthal / 1000000, color = dataset)) +
+  labs(title = "Class 1: Most Likely", x = "Denisova (Mb)", y = "Neanderthal (Mb)") +
+    theme_bw() +
+    geom_point()
+
+class2 %>% group_by(ID, population, Region, dataset, class_2) %>%
+  summarize(amount = sum(amount)) %>%
+  pivot_wider(names_from = class_2, values_from = amount) %>%
+  ggplot(aes(x = ND01 / 1000000, y = ND10 / 1000000, color = dataset)) +
+    labs(title = "Class 2: Exclusive ND Positions", x = "ND01 (Mb)", y = "ND10 (Mb)") +
+    theme_bw() +
+    geom_point()
+```
+
+Additionally write out the merged metadata for later:
+
+```{r}
+class1 %>% select(ID, dataset, population, Region, population_specific, code) %>% 
+  unique() %>% 
+  write.table("data/combined_fragments/combined_metadata.txt", sep = "\t", quote = F, row.names = F)
+
+class1 %>% 
+  write.table("data/combined_fragments/class1_fragments_and_metadata.txt", sep = "\t", quote = F, row.names = F)
+
+class1$plot_easy <- ifelse(is.na(class1$population_specific), class1$Region, class1$population_specific)
+
+class1 %>% select(ID, dataset, population, Region) %>% 
+  unique() %>%
+  ggplot(aes(x = population, fill = dataset)) +
+  geom_histogram(stat = "count") + 
+  theme_bw() + 
+  labs(y = "Number of Individual Genomes") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1)) +
+  facet_grid(~Region, scales = "free", space = "free")
+
+class1 %>% select(ID, dataset, population, Region) %>% 
+  unique() %>%
+  group_by(population, dataset) %>%
+  summarize(n())
+
+```
+
+
+Repeat the analysis, but now classify fragments by class 2: exclusive ND snps
+```{r}
+# Ensure Region has a defined order 
+class2$Region <- factor(class2$Region, levels = c("Americas", "Europe", "MiddleEast", "SouthAsia", "EastAsia", "SouthEastAsia", "Oceania"))
+
+# Arrange populations by Region and then convert to factor
+pop_levels <- class2 %>% 
+  distinct(population, Region) %>% 
+  arrange(Region, population) %>% 
+  pull(population)
+class2$population <- factor(class2$population, levels = pop_levels)
+
+# finally order the classifications
+class2$class_2 <- factor(class2$class_2, levels = c("ND10", "ND01", "ND11", "Mosaic", "ND00"), ordered = T)
+
+p_hap2 <- class2 %>% group_by(population, class_2, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Haplotype\nClass 2: exclusive ND Positions", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_2 ~ dataset, scales = "free", space = "free_x")
+plot(p_hap2)
+
+p_ind2 <- class2 %>% group_by(population, class_2, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, class_2, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 2: exclusive ND Positions", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_2 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind2)
+
+p_ind2_frac <- class2 %>% group_by(population, class_2, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, class_2, dataset, Region) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 2: exclusive ND Positions", y = "Archaic Ancestry (%)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_2 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind2_frac)
+
+
+```
+
+Lets focus on the populations with notable Denisovan ancestry
+
+```{r}
+# within oceania, I want to rename some of these populations
+class1$population_specific <- ifelse(grepl("choin", class1$dataset) & class1$Region == "Oceania", class1$code, class1$population_specific)
+
+class2$population_specific <- ifelse(grepl("choin", class2$dataset) & class2$Region == "Oceania", class2$code, class2$population_specific)
+
+p_ind_den2 <- class2 %>% filter(Region %in% c("Oceania", "SouthEastAsia")) %>% group_by(population, class_2, population_specific, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, population_specific, class_2, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population_specific, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 2: exclusive ND Positions", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_2 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind_den2)
+
+p_ind_den1 <- class1 %>% filter(Region %in% c("Oceania", "SouthEastAsia")) %>% group_by(population, class_1, population_specific, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, population_specific, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population_specific, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 1: most likely", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_1 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind_den1)
+```
+
+Focus only on Denisovan ancestry
+```{r}
+class1$population_specific <- ifelse(class1$dataset %in% c("1000G", "LASI"), as.character(class1$population), class1$population_specific)
+
+class1$plot_easy <- ifelse(class1$dataset %in% c("GAv1", "1000G", "HGDP") & !class1$Region %in% c("Oceania", "SouthEastAsia"), as.character(class1$Region), class1$population_specific)
+
+den_1 <- class1 %>% filter(class_1 == "Denisova", Region %in% c( "SouthEastAsia", "Oceania", "EastAsia")) %>% group_by(population, class_1, population_specific, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, population_specific, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000)
+
+den_2 <- class2 %>% filter(class_2 == "ND01", Region %in% c( "SouthEastAsia", "Oceania", "EastAsia")) %>% group_by(population, class_2, population_specific, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, population_specific, class_2, dataset, Region) %>%
+  summarize(avg_2 = mean(amount) / 1000000, sd_2 = sd(amount) / 1000000)
+den <- merge(den_1, den_2)
+
+p_ind_corr <- den %>% ggplot(aes(x = avg, y = avg_2, color = Region)) + 
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  theme_bw() + 
+  labs(x = "Amount (Mb) Using Class 1\nMost Likely", y = "Amount (Mb) Using Class 2\nExclusive ND Positions")
+plot(p_ind_corr)
+
+p_ind_den1 <- class1 %>% filter(class_1 == "Denisova", Region %in% c( "SouthEastAsia", "Oceania", "EastAsia", "SouthAsia")) %>% group_by(class_1, plot_easy, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(plot_easy, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = plot_easy, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 1: most likely", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_1 ~ dataset, scales = "free", space = "free_x")
+
+plot(p_ind_den1)
+
+pdf("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/plots/ancestry/Den_SEA_OCE_EAS.pdf", height = 4, width = 8.5)
+plot(p_ind_den1)
+dev.off()
+```
+
+Just look at choin, and the fragment assignment for each class
+```{r}
+class1$population_specific <- gsub("BKA", "Bismark Islands", class1$population_specific)
+class1$population_specific <- gsub("PNG", "Papau New Guinea", class1$population_specific)
+class1$population_specific <- gsub("POL", "Polynesia", class1$population_specific)
+class1$population_specific <- gsub("VAN", "Vanuatu Islands", class1$population_specific)
+class1$population_specific <- gsub("SCI", "Santa Cruz Islands", class1$population_specific)
+class1$population_specific <- gsub("SLI", "Solomon Islands", class1$population_specific)
+
+class1 %>% filter(dataset == "choin_hg19") %>% group_by(ID, population, class_1, population_specific) %>% summarize(amount = sum(amount)) %>% 
+  group_by(population_specific, population, class_1) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = paste0(population_specific, "(", indivs, ")"), y = avg, fill = class_1)) +
+    geom_bar(stat = "identity", position = "stack") +
+      geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() +
+    labs(y = "Archaic Ancestry (%)", x = "Population (n)", title = "Class 1: Most Likely") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  facet_grid(class_1~population, scales = "free", space = "free_x")
+
+class1 %>% filter(dataset == "choin_hg19", population == "Oceania") %>% group_by(ID, population, class_1, population_specific) %>% summarize(amount = sum(amount)) %>% 
+  group_by(population, class_1) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = class_1, y = avg, fill = class_1)) +
+    geom_bar(stat = "identity", position = "stack") +
+      geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() +
+    labs(y = "Archaic Ancestry (%)", x = "Population (n)", title = "Class 1: Most Likely") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+
+# class2:
+class2$population_specific <- gsub("BKA", "Bismark Islands", class2$population_specific)
+class2$population_specific <- gsub("PNG", "Papau New Guinea", class2$population_specific)
+class2$population_specific <- gsub("POL", "Polynesia", class2$population_specific)
+class2$population_specific <- gsub("VAN", "Vanuatu Islands", class2$population_specific)
+class2$population_specific <- gsub("SCI", "Santa Cruz Islands", class2$population_specific)
+class2$population_specific <- gsub("SLI", "Solomon Islands", class2$population_specific)
+
+class2 %>% filter(dataset == "choin_hg19") %>% group_by(ID, population, class_2, population_specific) %>% summarize(amount = sum(amount)) %>% 
+  group_by(population_specific, population, class_2) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = paste0(population_specific, "(", indivs, ")"), y = avg, fill = class_2)) +
+    geom_bar(stat = "identity", position = "stack") +
+      geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() +
+    labs(y = "Archaic Ancestry (%)", x = "Population (n)", title = "Class 2: ND Exclusive") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  facet_grid(class_2~population, scales = "free", space = "free_x")
+
+class2 %>% filter(dataset == "choin_hg19", population == "Oceania") %>% group_by(ID, population, class_2, population_specific) %>% summarize(amount = sum(amount)) %>% 
+  group_by(population, class_2) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = class_2, y = avg, fill = class_2)) +
+    geom_bar(stat = "identity", position = "stack") +
+      geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() +
+    labs(y = "Archaic Ancestry (%)", x = "Population (n)", title = "Class 2: ND Exclusive") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+
+```
+
+
+I want to group across datasets to make this match our metadata a bit more
+```{r}
+# need to make sure to remove hg19 choin here, so we're not doubling the archaic ancestry
+class1 <- filter(class1, dataset != "choin_hg19")
+cols = c( "#009E73", "#0072B2", "#E69F00", "#925E9F")
+
+class1$broad_labels <- ifelse(class1$plot_easy %in% c("Atayal", "Paiwan"), "East Asia", class1$plot_easy)
+class1$broad_labels <- gsub("Aeta", "Agta", class1$broad_labels)
+class1$broad_labels <- gsub("BKA", "Bismark Islands", class1$broad_labels)
+class1$broad_labels <- gsub("POL", "Polynesia", class1$broad_labels)
+class1$broad_labels <- gsub("VAN", "Vanuatu Islands", class1$broad_labels)
+class1$broad_labels <- gsub("SCI", "Santa Cruz Islands", class1$broad_labels)
+class1$broad_labels <- gsub("SLI", "Solomon Islands", class1$broad_labels)
+
+
+class1$broad_labels <- gsub("EastAsia", "East Asia", class1$broad_labels)
+class1$broad_labels <- gsub("SouthAsia", "South Asia", class1$broad_labels)
+class1$broad_labels <- ifelse(class1$broad_labels %in% c("Agta", "Ati"), paste0(class1$broad_labels, ", Phillipines"), class1$broad_labels)
+class1$broad_labels <- gsub("Cebuano", "Cebuano, Philippines", class1$broad_labels)
+class1$broad_labels <- gsub("Austronesia", "Austronesia, Indonesia", class1$broad_labels)
+
+
+class1$broad_labels <- ifelse(class1$dataset == "LASI", "South Asia", class1$broad_labels)
+class1$broad_labels <- ifelse(grepl("Flores", class1$broad_labels), "Flores, Indonesia", class1$broad_labels)
+class1$broad_labels <- ifelse(grepl("Papuan", class1$broad_labels) | class1$broad_labels == "PNG", "Papuan", class1$broad_labels)
+
+p_ind_den1 <- class1 %>% filter(class_1 == "Denisova", Region %in% c( "SouthEastAsia", "Oceania", "EastAsia", "SouthAsia")) %>% group_by(class_1, broad_labels, Region, ID, dataset) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(broad_labels, class_1, Region) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = reorder(broad_labels, -avg), y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    scale_fill_manual(values = cols) +
+    geom_text(aes(x = broad_labels, y = avg + sd + 0.15, label = paste0("(", indivs, ")")), size = 3) +
+    labs(title = "Average Denisovan Ancestry per Individual", y = "Denisovan Ancestry (%)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.x = element_blank())
+
+plot(p_ind_den1)
+
+pdf("plots/ancestry/Asia_Oceania_Denisovan.pdf", height = 4, width = 7)
+plot(p_ind_den1)
+dev.off()
+
+# get the population labels and info:
+class1 %>% filter(Region %in% c( "SouthEastAsia", "Oceania", "EastAsia", "SouthAsia"))  %>% select(population, dataset, population_specific, code, Region, broad_labels) %>% unique() %>% View()
+
+class1 %>% filter(Region %in% c( "SouthEastAsia", "Oceania", "EastAsia", "SouthAsia"))  %>% select(population, dataset, population_specific, code, Region, broad_labels, ID) %>% unique() %>% ungroup() %>% group_by(population, Region) %>% summarize(n()) %>% View()
+
+
+class1 %>% filter(class_1 %in% c("Denisova", "Neanderthal"), Region %in% c("Oceania", "SouthAsia"), dataset != "choin") %>% group_by(class_1,  Region, ID, dataset) %>%
+  summarize(amount = sum(amount), count = sum(n)) %>%
+  ungroup() %>%
+  group_by(class_1, Region, dataset) %>%
+  summarize(avg_MB = mean(amount) / 1000000, sd_MB = sd(amount) / 1000000, avg_count = mean(count), sd_count = sd(count),  indivs = length(unique(ID))) %>%
+  write.table("SAS_OCEA_fragment_summary.tsv", quote = F, row.names = F, sep = "\t")
+
+
+%>% 
+  ggplot(aes(x = reorder(broad_labels, -avg), y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    scale_fill_manual(values = cols) +
+    geom_text(aes(x = broad_labels, y = avg + sd + 0.15, label = paste0("(", indivs, ")")), size = 3) +
+    labs(title = "Average Denisovan Ancestry per Individual", y = "Denisovan Ancestry (%)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.x = element_blank())
+
+```
+
+plot with even more broad groups
+```{r}
+class1$MCB <- ifelse(grepl("Indonesia", class1$broad_labels), "Indonesia", class1$broad_labels)
+class1$MCB <- ifelse(class1$MCB == "Bougainville" | class1$MCB == "Solomon Islands", "Solomon Islands Archipelago", class1$MCB)
+class1$MCB <- gsub("Papuan", "Papua Mainland", class1$MCB)
+
+class1$MCB <- ifelse(grepl("Phil", class1$MCB) & !grepl("Agta", class1$MCB), "Non-Agta, Philippines", class1$MCB)
+
+p_ind_den1 <- class1 %>% filter(class_1 == "Denisova", Region %in% c( "SouthEastAsia", "Oceania", "EastAsia", "SouthAsia")) %>% group_by(class_1, Region, MCB, ID, dataset) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(class_1, Region, MCB) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = reorder(MCB, -avg), y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    scale_fill_manual(values = cols, guide = "none") +
+    geom_text(aes(x = MCB, y = avg + sd + 0.15, label = paste0("(", indivs, ")")), size = 3) +
+    labs(title = "Average Denisovan Ancestry per Individual", y = "Denisovan Ancestry (%)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.x = element_blank())
+
+plot(p_ind_den1)
+
+
+pdf("plots/ancestry/MCB_DenisovanAncestry.pdf", height = 4, width = 5)
+plot(p_ind_den1)
+dev.off()
+```
+
+Do the most broad labels for CCB retreat talk  
+```{r}
+p_ind_den1 <- class1 %>% filter(class_1 == "Denisova", Region %in% c( "SouthEastAsia", "Oceania", "EastAsia", "SouthAsia")) %>% group_by(class_1, Region, ID, dataset) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(class_1, Region) %>%
+  summarize(avg = mean(amount) / (2 * 2550757832) * 100, sd = sd(amount) / (2 * 2550757832) * 100,  indivs = length(unique(ID))) %>% 
+  ggplot(aes(x = reorder(Region, -avg), y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    scale_fill_manual(values = cols, guide = "none") +
+    geom_text(aes(x = Region, y = avg + sd + 0.15, label = paste0("(", indivs, ")")), size = 3) +
+    labs(title = "Average Denisovan Ancestry per Individual", y = "Denisovan Ancestry (%)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.x = element_blank())
+
+plot(p_ind_den1)
+
+
+pdf("plots/ancestry/MCB_DenisovanAncestry.pdf", height = 4, width = 5)
+plot(p_ind_den1)
+dev.off()
+```
+
+
+
+Do a cleaner comparison between datasets
+```{r}
+p_arch_ind <- class1 %>% filter(ID %in% c("B00FLGB", "B00FLGF", "GA000529", "GA000537", "EGAN00001279033", "EGAN00001279038", "GA000519", "GA000523", "HGDP00551", "HGDP00556", "HG00403", "NA19002", "B00FLGM", "B00FLIA", "GA001487", "GA001520", "HGDP00716", "HGDP01355"), MCB != "Agta, Phillipines", class_1 %in% c("Neanderthal", "Denisova")) %>% group_by(class_1, MCB, Region, ID, dataset) %>%
+  summarize(amount = sum(amount)/ (2 * 2550757832) * 100) %>% 
+  ggplot(aes(x = paste0(dataset, ID), y = amount, fill = dataset)) +
+    geom_bar(stat = "identity") +
+    theme_bw() + 
+    scale_fill_manual(values = c("grey", "#222222", "grey", "black"), guide = "none") +
+    labs(title = "Archaic Ancestry per Individual", y = "Archaic Ancestry (%)", x = "Individuals") +
+    theme(axis.text.x = element_blank())+
+  facet_grid(class_1~MCB, scales = "free", space = 'free')
+
+pdf("plots/ancestry/ArchaicAncestry_Indivs.pdf", height = 3, width = 3)
+plot(p_arch_ind)
+dev.off()
+```
+
+Finally compare the amount of "unclassified" if we require that there are 10 callable archaic positions in each fragment
+```{r}
+class1_call <- data.frame()
+for (dataset in c("GAv1", "LASI", "1000G", "choin")){
+  dat_class1_call <- read.table(paste0("summary_dat/hmmix/", dataset, "_class1_call10_perIndiv.txt"), header =T, sep = "\t")
+  dat_class1_call$dataset <- dataset
+  class1_call <- rbindlist(list(class1_call, dat_class1_call), use.names = T, fill = T)
+}
+#class1_call$population <- ifelse(is.na(class1_call$population), class1_call$region.y, class1_call$population)
+
+class1_call <- label_region(class1_call)
+
+# Ensure Region has a defined order
+class1_call$Region <- factor(class1_call$Region, levels = c("Americas", "Europe", "MiddleEast", "SouthAsia", "EastAsia", "SouthEastAsia", "Oceania"))
+
+# Arrange populations by Region and then convert to factor
+pop_levels <- class1_call %>% 
+  distinct(population, Region) %>% 
+  arrange(Region, population) %>% 
+  pull(population)
+class1_call$population <- factor(class1_call$population, levels = pop_levels)
+
+# finally order the classifications
+class1_call$class_1 <- factor(class1_call$class_1, levels = c("Neanderthal", "Denisova", "Both", "None"), ordered = T)
+
+p_ind_call <- class1_call %>% group_by(population, class_1, dataset, Region, ID) %>%
+  summarize(amount = sum(amount)) %>%
+  ungroup() %>%
+  group_by(population, class_1, dataset, Region) %>%
+  summarize(avg = mean(amount) / 1000000, sd = sd(amount) / 1000000) %>% 
+  ggplot(aes(x = population, y = avg, fill = Region)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd)) +
+    theme_bw() + 
+    labs(title = "Average amount of Ancestry per Individual\nClass 1: Most Likely", y = "Archaic Ancestry (Mb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    facet_grid(class_1 ~ dataset, scales = "free", space = "free_x")
+plot(p_ind_call)
+```
+

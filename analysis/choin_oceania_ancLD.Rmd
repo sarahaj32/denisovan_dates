@@ -1,0 +1,834 @@
+---
+title: "analyze_ancLD"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+# set plotting settings and variables
+theme_set(theme_bw() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+            theme(axis.text = element_text(size = 10)))
+
+library(tidyverse)
+library(DEoptim)
+```
+
+Curve plotting steps (for each simulation):
+1. plot all chromosomes
+2. calculate the jacknifed fit (find the fit of each chromosome, then average with each chromosome removed) 
+3. Plot the mean ancestry D across all chromosomes
+4. Plot over the top the jacknifed fit
+
+ A function to Jacknife:
+```{r}
+# a function that calculates the fit for each chromosome and saves those slopes
+
+opt_fit <- function(dat){
+    # Pick optimized parameters for model 1: A*exp(m1 * -x) + C
+  dist <- dat$distance		# updated x values
+  wcorr <- dat$D		# updated y values
+  
+  fm1 <- function(x) x[1]*exp(-x[2] * dist)
+  fm2 <- function(x) sum((wcorr-fm1(x))^2)
+  fm3 <- DEoptim(fm2, lower=c(0.00001,500), upper=c(10, 2000), control=list(trace=FALSE))
+  par1 <- fm3$optim$bestmem
+  
+  # parameters for y ~ Ae-mt
+  names(par1) <- c("A", "m")
+
+  model_exp <- nls(wcorr ~ (A*exp(-m * dist)), start=par1, control=list(maxiter=1000, warnOnly=TRUE))
+	
+
+  return(coef(model_exp))
+}
+
+jacknife <- function(dat){
+  # first get the fit from the data averaged across all chromosomes
+  jack_means <- dat %>% group_by(distance) %>% summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count)
+    
+  full_results <- opt_fit(jack_means)
+  jack_results <- data.frame("inc" = "all", "inf_m" = full_results[2], "inf_a" = full_results[1], "snps" = "NA")
+
+  for (i in unique(dat$chrom)){
+    #rm(a)
+  # remove each chromosome, and calculate the mean D
+    jack_dat <- filter(dat, chrom != i)
+    #print(nrow(jack_dat))
+    jack_means <- jack_dat %>% group_by(distance) %>% summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count)
+
+    jack <- opt_fit(jack_means)
+    inf_m <- jack[2]
+    #print(inf_m)
+    inf_a <- jack[1]
+
+    snps = filter(dat, chrom == i) %>% dplyr::select(snps) %>% unique()
+
+    jack_out <- data.frame("inc" = i, "inf_m" = inf_m, "inf_a" = inf_a, "snps" = snps)
+    jack_results <- rbind(jack_results, jack_out)
+  }
+  return(jack_results)
+}
+```
+
+
+Implement jacknife and get the inferred Tadmix for each:
+```{r}
+mean_results <- data.frame()
+for (archaic in c("DEN", "NEA")){
+  print(archaic)
+  for (method in c("Downsample2")){ # "Variable", 
+    print(method)
+    for (class in c("mostLikely")){ # , "ND01"
+      print(class)
+    # read in the curve data for each simulation
+    curve_dat <- data.frame()
+    for (i in 1:22){
+      tmp_curve <- read.table(paste0("data/choin/curve/", archaic, "_results/genmap/choin_Oceania_fragments_08_", class, "_Oceania", method, "_hg19_chr", i, "_D.txt"))
+      colnames(tmp_curve) <- c("min", "max", "D", "D_sum", "count", "snps")  
+      tmp_curve$chrom <- i
+      tmp_curve$complete <- nrow(tmp_curve)
+      curve_dat <- rbind(curve_dat, tmp_curve)
+    } 
+    
+
+      curve_dat <- filter(curve_dat, max > 0.0002)
+        # convert distances to centimorgans
+      curve_dat$distance <- curve_dat$min
+
+      # plot the curves for each chromosome
+      p_chrom <- ggplot(curve_dat, aes(x = distance * 100, y = D)) +
+        geom_point(size = 0.1) +
+        labs(x = "Distance (in M)", y = "Ancestry D", title = paste0("Each Chromosome Plotted Separately, choin Oceania:", method, "-", class)) +
+          facet_wrap(~chrom)
+      plot(p_chrom)
+      
+      chrom_results <- data.frame()
+      for (i in 1:22){
+        chrom_dat <- filter(curve_dat, chrom == i)
+        i_results <- data.frame(opt_fit(chrom_dat))
+        colnames(i_results) <- c("value")
+        i_results$chrom <- i
+        i_results$snps <- unique(chrom_dat$snps)
+        chrom_results <- rbind(chrom_results, i_results)
+      }
+      chrom_results$param <- gsub("[0-9]", "", rownames(chrom_results))
+
+      print("Jacknifing curve")
+      # jacknife the fits:
+      jack_curve_fit <- jacknife(curve_dat)
+    
+      # prepare input for the weighted jacknife analysis
+      jin <- paste0("data/choin/genmap_curve/jacknife/", method, "_", class, "_", archaic, "_chromosome_fit_results.jin")
+      jout <- paste0("data/choin/genmap_curve/jacknife/", method, "_", class, "_", archaic, "_chromosome_fit_results.jout")
+      
+      jack_curve_fit %>% filter(inc != "all") %>% 
+        dplyr::select(inc, snps, inf_m) %>%
+        write.table(jin, sep = "\t", quote = F, row.names = F, col.names = F)
+      full_mean <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_m) %>% unlist()
+      full_a <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_a) %>% unlist()
+      
+      chrom_results$full <- ifelse(chrom_results$param == "A", full_a, full_mean)
+      
+      p_chrom_infer <- ggplot(chrom_results, aes(x = chrom, y = value))+
+        geom_point() +
+        geom_hline(aes(yintercept = full), linetype = "dashed") +
+        facet_wrap(~param, scales = "free")
+      plot(p_chrom_infer)
+      
+      p_chrom_snps <- ggplot(chrom_results, aes(x = snps, y = value))+
+        geom_point() +
+        geom_hline(aes(yintercept = full), linetype = "dashed") +
+        facet_wrap(~param, scales = "free")
+      plot(p_chrom_snps)
+      
+      # run weighted jacknife
+      system(paste0("dowtjack -i ",jin, " -m ", full_mean,  " -o ", jout))
+  
+      jack_results <- read.table(jout)
+      inf_m <- jack_results[1, 1]
+      SE <- jack_results[1, 2]
+      
+      print(inf_m)
+      print(full_mean)
+      # plot the fit as a line
+      curve_dat$fit <- full_a * exp(-inf_m * curve_dat$distance) 
+
+      curve_dat$full_fit <- full_a * exp(-full_mean * curve_dat$distance) 
+
+      mean_results_archaic <- curve_dat %>% group_by(distance, full_fit, fit) %>% 
+        summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count) %>% 
+        mutate("archaic" = archaic)     
+      
+          # write out results to run getposterior on
+      mean_results_archaic %>% 
+          ungroup() %>% 
+          mutate(dist = distance * 100, D_2 = D, D_3 = D, D_4 = D) %>%
+          select(dist, D, D_2, D_3, D_4, count) %>% 
+          write.table(paste0("data/choin/curve/", archaic, "_results/genmap/choin_Oceania_fragements_08_", class, "_Oceania", method, "_hg19_combinedD.txt"), quote = F, row.names = F, col.names = F, sep = "\t")
+      
+      fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in cM)", y = "Covariance in Local Ancestry", title = paste0("JK Fit choin Oceania: ", method, "-", class, "_", archaic, "\n Inferred Slope = ", round(inf_m), " jacknifed_SD = ", SE)) +
+        geom_line(aes(x = distance, y = fit), color = "red", size = 0.75)
+      plot(fit_p)
+      
+      full_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit choin Oceania: ", method, "-", class, "_", archaic, "\n Inferred Slope = ", round(full_mean), " jacknifed_SD = ", SE)) +
+        geom_line(aes(x = distance, y = full_fit), color = "red", size = 0.75)
+      plot(full_fit_p)
+      
+      mean_results <- rbind(mean_results, mean_results_archaic)
+    }
+  }
+}
+
+```
+
+Implement exponential fit with a scalar term
+```{r}
+opt_fit_C <- function(dat){
+    # Pick optimized parameters for model 1: A*exp(m1 * -x) + C
+  dist <- dat$distance		# updated x values
+  wcorr <- dat$D		# updated y values
+  
+  fm1 <- function(x) x[1]*exp(-x[2] * dist) + x[3]
+  fm2 <- function(x) sum((wcorr-fm1(x))^2)
+  fm3 <- DEoptim(fm2, lower=c(0.00001,500, -5), upper=c(10, 2000, 5), control=list(trace=FALSE))
+  par1 <- fm3$optim$bestmem
+
+  # parameters for y ~ Ae-mt
+  names(par1) <- c("A", "m", "C")
+
+  model_exp <- nls(wcorr ~ (A*exp(-m * dist) + C), start=par1, control=list(maxiter=1000, warnOnly=TRUE))
+	
+
+  return(coef(model_exp))
+}
+
+
+jacknife_C <- function(dat){
+  # first get the fit from the data averaged across all chromosomes
+  jack_means <- dat %>% group_by(distance) %>% summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count)
+    
+  full_results <- opt_fit_C(jack_means)
+  jack_results <- data.frame("inc" = "all", "inf_C" = full_results[3], "inf_m" = full_results[2], "inf_a" = full_results[1], "snps" = "NA")
+
+  for (i in unique(dat$chrom)){
+    #rm(a)
+  # remove each chromosome, and calculate the mean D
+    jack_dat <- filter(dat, chrom != i)
+    #print(nrow(jack_dat))
+    jack_means <- jack_dat %>% group_by(distance) %>% summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count)
+
+    jack <- opt_fit_C(jack_means)
+    inf_C <- jack[3]
+    inf_m <- jack[2]
+    #print(inf_m)
+    inf_a <- jack[1]
+
+    snps = filter(dat, chrom == i) %>% dplyr::select(snps) %>% unique()
+
+    jack_out <- data.frame("inc" = i, "inf_m" = inf_m, "inf_a" = inf_a, "inf_C" = inf_C, "snps" = snps)
+    jack_results <- rbind(jack_results, jack_out)
+  }
+  return(jack_results)
+}
+```
+
+Choin with an affine term
+
+```{r}
+mean_results <- data.frame()
+
+for (archaic in c("DEN", "NEA")){
+  print(archaic)
+  for (method in c("Downsample2")){ # "Variable", 
+    print(method)
+    for (class in c("mostLikely")){ # , "ND01"
+      print(class)
+    # read in the curve data for each simulation
+    curve_dat <- data.frame()
+    for (i in 1:22){
+      tmp_curve <- read.table(paste0("data/choin/curve/", archaic, "_results/genmap/choin_Oceania_fragments_08_", class, "_Oceania", method, "_hg19_chr", i, "_D.txt"))
+      colnames(tmp_curve) <- c("min", "max", "D", "D_sum", "count", "snps")  
+      tmp_curve$chrom <- i
+      tmp_curve$complete <- nrow(tmp_curve)
+      curve_dat <- rbind(curve_dat, tmp_curve)
+    } 
+    
+      curve_dat <- filter(curve_dat, max > 0.0002, complete == 990)
+        # convert distances to centimorgans
+      curve_dat$distance <- curve_dat$min
+      
+      print("Jacknifing curve")
+      # jacknife the fits:
+      jack_curve_fit <- jacknife_C(curve_dat)
+    
+      # prepare input for the weighted jacknife analysis
+      jin <- paste0("data/choin/genmap_curve/jacknife/", method, "_", class, "_", archaic, "_C_chromosome_fit_results.jin")
+      jout <- paste0("data/choin/genmap_curve/jacknife/", method, "_", class, "_", archaic, "_C_chromosome_fit_results.jout")
+      
+      jack_curve_fit %>% filter(inc != "all") %>% 
+        dplyr::select(inc, snps, inf_m) %>%
+        write.table(jin, sep = "\t", quote = F, row.names = F, col.names = F)
+      full_mean <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_m) %>% unlist()
+      full_a <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_a) %>% unlist()
+      full_C <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_C) %>% unlist()
+      
+      # run weighted jacknife
+      system(paste0("dowtjack -i ",jin, " -m ", full_mean,  " -o ", jout))
+  
+      jack_results <- read.table(jout)
+      inf_m <- jack_results[1, 1]
+      SE <- jack_results[1, 2]
+      inf_C <- jack_results[1, 3]
+      
+      # plot the fit as a line
+      curve_dat$fit <- full_a * exp(-inf_m * curve_dat$distance) + full_C
+
+      curve_dat$full_fit <- full_a * exp(-full_mean * curve_dat$distance) + full_C 
+      
+      mean_results_archaic <- curve_dat %>% group_by(distance, full_fit, fit) %>% 
+        summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count) %>% 
+        mutate("archaic" = archaic)
+      
+      full_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit choin Oceania: ", method, "-", class, "_", archaic, "\n Inferred Slope = ", round(full_mean), " C = ", round(full_C, 5), "SE = ", SE)) +
+        geom_line(aes(x = distance, y = full_fit), color = "red", size = 0.75)
+      plot(full_fit_p)
+      
+      
+      JK_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit choin Oceania: ", method, "-", class, "_", archaic, "\n Inferred Slope = ", round(inf_m), " C = ", round(full_C, 5), "SE = ", SE)) +
+        geom_line(aes(x = distance, y = fit), color = "red", size = 0.75)
+      plot(JK_fit_p)
+      
+    mean_results <- rbind(mean_results, mean_results_archaic)
+      
+    }
+  }
+}
+
+```
+
+implement jacknife myself to test and understand
+```{r}
+snps <- sum(as.numeric(jack_curve_fit$snps), na.rm = T)
+jack_curve_fit$weight <- 1 - (as.numeric(jack_curve_fit$snps) / snps)
+jack_curve_fit$theta <- jack_curve_fit$weight * jack_curve_fit$inf_m
+full_mean <- filter(jack_curve_fit, inc == "all")$inf_m
+(nrow(jack_curve_fit) - 1) * full_mean - sum(jack_curve_fit$theta, na.rm = T)
+# DEN should be 1071
+
+ggplot(mean_results, aes(x = distance * 100, y = D, color = archaic)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c("darkorange2", "#45b6fe")) +
+  geom_line(aes(y = fit, color = archaic))
+
+mean_results %>% filter(distance < 0.002, distance > 0.0002) %>%
+ggplot(aes(x = distance * 100, y = D, color = archaic)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c("darkorange2", "#45b6fe")) +
+  geom_line(aes(y = fit, color = archaic))
+
+mean_results %>% filter(distance > 0.003) %>%
+ggplot(aes(x = distance, y = D, color = archaic)) +
+  geom_point(alpha = 0.25) +
+  scale_color_manual(values = c("darkorange2", "#45b6fe")) +
+  geom_line(aes(y = fit, color = archaic))
+
+```
+
+
+Now look at non-Oceanian data:
+
+```{r}
+mean_results <-data.frame()
+for (archaic in c("DEN", "NEA")){
+  print(archaic)
+  for (pop in c("SAS", "GBR", "PJL", "CEU")){ # "Variable", 
+    # read in the curve data for each simulation
+    curve_dat <- data.frame()
+    for (i in 1:22){
+        f <- paste0("data/1000G/", pop, "/hg19/", archaic, "_results/genmap/1000G_", pop, "_mostLikely_Downsample4_chr", i, "_D.txt")
+  
+        # Skip if file is empty or doesn't exist
+        if (!file.exists(f) || file.size(f) == 0) {
+          next
+        }
+      tmp_curve <- read.table(f)
+      colnames(tmp_curve) <- c("min", "max", "D", "D_sum", "count", "snps")  
+      tmp_curve$chrom <- i
+      tmp_curve$complete <- nrow(tmp_curve)
+      curve_dat <- rbind(curve_dat, tmp_curve)
+    } 
+    
+      curve_dat <- filter(curve_dat, max > 0.0002, complete == 990, !is.na(D))
+        # convert distances to centimorgans
+      curve_dat$distance <- curve_dat$min
+      
+      print("Jacknifing curve")
+      # jacknife the fits:
+      jack_curve_fit <- jacknife_C(curve_dat)
+    
+      # prepare input for the weighted jacknife analysis
+      jin <- paste0("data/1000G_", pop, "/genmap_curve/jacknife/Downsample4_mostLikely_", archaic, "_C_chromosome_fit_results.jin")
+      jout <- paste0("data/1000G_", pop, "/genmap_curve/jacknife/Downsample4_mostLikely_", archaic, "_C_chromosome_fit_results.jout")
+      jpath <- paste0("data/1000G_", pop, "/genmap_curve/jacknife/")
+      
+      jack_curve_fit %>% filter(inc != "all") %>% 
+        dplyr::select(inc, snps, inf_m) %>%
+        write.table(jin, sep = "\t", quote = F, row.names = F, col.names = F)
+      full_mean <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_m) %>% unlist()
+      full_a <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_a) %>% unlist()
+      full_C <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_C) %>% unlist()
+      
+      # run weighted jacknife
+      system(paste0("mkdir -p ", jpath))
+      system(paste0("dowtjack -i ",jin, " -m ", full_mean,  " -o ", jout))
+  
+      jack_results <- read.table(jout)
+      inf_m <- jack_results[1, 1]
+      SE <- jack_results[1, 2]
+      inf_C <- jack_results[1, 3]
+      
+      # plot the fit as a line
+      curve_dat$fit <- full_a * exp(-inf_m * curve_dat$distance) + full_C
+
+      curve_dat$full_fit <- full_a * exp(-full_mean * curve_dat$distance) + full_C 
+      
+      mean_results_archaic <- curve_dat %>% group_by(distance, full_fit, fit) %>% 
+        summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count) %>% 
+        mutate("archaic" = archaic)
+      
+      # write out results to run getposterior on
+      mean_results_archaic %>% 
+          ungroup() %>% 
+          mutate(dist = distance * 100, D_2 = D, D_3 = D, D_4 = D) %>%
+          select(dist, D, D_2, D_3, D_4, count) %>% 
+          write.table(paste0("data/1000G/", pop, "/hg19/", archaic, "_results/genmap/1000G_", pop, "_mostLikely_Downsample4_combinedD.txt"), quote = F, row.names = F, col.names = F, sep = "\t")
+      
+      
+      full_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit 100G ", pop, "_", archaic, "\n Inferred Slope = ", round(full_mean), " C = ", round(full_C, 5), "SE = ", SE)) +
+        geom_line(aes(x = distance, y = full_fit), color = "red", size = 0.75)
+      plot(full_fit_p)
+      
+      
+      JK_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit 100G ", pop, "_", archaic, "\n Inferred Slope = ", round(inf_m), " C = ", round(full_C, 5), "SE = ", SE)) +
+        geom_line(aes(x = distance, y = fit), color = "red", size = 0.75)
+      plot(JK_fit_p)
+      
+    mean_results <- rbind(mean_results, mean_results_archaic)
+      
+  }
+}
+
+
+```
+LASIDAD
+```{r}
+mean_results <-data.frame()
+for (archaic in c("DEN", "NEA")){
+  print(archaic)
+  for (pop in c("North", "Central", "South", "West", "North-East", "East")){ # "Variable", "SAS", #, "West" "GBR", "PJL"
+    # read in the curve data for each simulation
+    curve_dat <- data.frame()
+    for (i in 1:22){
+        f <- paste0("data/LASIDAD/", pop, "/hg19/", archaic, "_results/genmap/LASIDAD_", pop, "_mostLikely_Downsample6_chr", i, "_D.txt")
+  
+        # Skip if file is empty or doesn't exist
+        if (!file.exists(f) || file.size(f) == 0) {
+          next
+        }
+      tmp_curve <- read.table(f)
+      colnames(tmp_curve) <- c("min", "max", "D", "D_sum", "count", "snps")  
+      tmp_curve$chrom <- i
+      tmp_curve$complete <- nrow(tmp_curve)
+      curve_dat <- rbind(curve_dat, tmp_curve)
+    } 
+    
+      curve_dat <- filter(curve_dat, max > 0.0002, complete == 990, !is.na(D)) # , chrom != 10
+      curve_dat$D <- curve_dat$D
+        # convert distances to centimorgans
+      curve_dat$distance <- curve_dat$min
+      
+      print("Jacknifing curve")
+      # jacknife the fits:
+      jack_curve_fit <- jacknife_C(curve_dat)
+    
+      # prepare input for the weighted jacknife analysis
+      jin <- paste0("data/LASIDAD_", pop, "/genmap_curve/jacknife/Downsample6_mostLikely_", archaic, "_C_chromosome_fit_results.jin")
+      jout <- paste0("data/LASIDAD_", pop, "/genmap_curve/jacknife/Downsample6_mostLikely_", archaic, "_C_chromosome_fit_results.jout")
+      
+      jack_curve_fit %>% filter(inc != "all") %>% 
+        dplyr::select(inc, snps, inf_m) %>%
+        write.table(jin, sep = "\t", quote = F, row.names = F, col.names = F)
+      full_mean <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_m) %>% unlist()
+      full_a <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_a) %>% unlist()
+      full_C <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_C) %>% unlist()
+      
+      # run weighted jacknife
+      system(paste0("dowtjack -i ",jin, " -m ", full_mean,  " -o ", jout))
+  
+      jack_results <- read.table(jout)
+      inf_m <- jack_results[1, 1]
+      SE <- jack_results[1, 2]
+      inf_C <- jack_results[1, 3]
+      
+      # plot the fit as a line
+      curve_dat$fit <- full_a * exp(-inf_m * curve_dat$distance) + full_C
+
+      curve_dat$full_fit <- full_a * exp(-full_mean * curve_dat$distance) + full_C 
+      
+      mean_results_archaic <- curve_dat %>% group_by(distance, full_fit, fit) %>% 
+        summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count) %>% 
+        mutate("archaic" = archaic, 
+               "pop" = pop,
+               "n_chroms" = length(unique(curve_dat$chrom)),
+               "chroms" = paste(unique(curve_dat$chrom), collapse = ";"),
+               "inf_m" = inf_m, 
+               "SE" = SE,
+               "inf_c" = inf_C)
+      
+      # write out results to run getposterior on
+      mean_results_archaic %>% 
+          ungroup() %>% 
+          mutate(dist = distance * 100, D_2 = D, D_3 = D, D_4 = D) %>%
+          select(dist, D, D_2, D_3, D_4, count) %>% 
+          write.table(paste0("data/LASIDAD/", pop, "/hg19/", archaic, "_results/genmap/LASIDAD_", pop, "_mostLikely_Downsample4_combinedD.txt"), quote = F, row.names = F, col.names = F, sep = "\t")
+      
+      
+      full_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit LASIDAD ", pop, "_", archaic, "\n Inferred Slope = ", round(full_mean), " C = ", round(full_C, 5), " SE = ", SE)) +
+        geom_line(aes(x = distance, y = full_fit), color = "red", size = 0.75)
+      plot(full_fit_p)
+      
+      
+      JK_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit LASIDAD ", pop, "_", archaic, "\n Inferred Slope = ", round(inf_m), " C = ", round(full_C, 5), " SE = ", SE)) +
+        geom_line(aes(x = distance, y = fit), color = "red", size = 0.75)
+      plot(JK_fit_p)
+      
+    mean_results <- rbind(mean_results, mean_results_archaic)
+      
+  }
+}
+
+
+```
+
+```{r}
+mean_results_filtered <- mean_results
+mean_results_filtered %>% ungroup %>% select(pop, archaic, n_chroms, inf_m, SE, chroms) %>% unique() %>% View()
+
+ggplot(mean_results_filtered, aes(x = distance * 100, y = D, color = archaic)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c("darkorange2", "#45b6fe")) +
+  geom_line(aes(y = fit, color = archaic)) +
+  facet_wrap(~pop)
+
+
+```
+
+```{r}
+mean_results <-data.frame()
+for (archaic in c("DEN", "NEA")){
+  print(archaic)
+  for (pop in c("North", "Central", "South", "West", "North-East", "East")){ # "Variable", "SAS", #, "West" "GBR", "PJL"
+    # read in the curve data for each simulation
+    curve_dat <- data.frame()
+    for (i in 1:22){
+        f <- paste0("data/LASIDAD/", pop, "/hg19/", archaic, "_results/genmap/LASIDAD_", pop, "_mostLikely_Downsample6_chr", i, "_D.txt")
+  
+        # Skip if file is empty or doesn't exist
+        if (!file.exists(f) || file.size(f) == 0) {
+          next
+        }
+      tmp_curve <- read.table(f)
+      colnames(tmp_curve) <- c("min", "max", "D", "D_sum", "count", "snps")  
+      tmp_curve$chrom <- i
+      tmp_curve$complete <- nrow(tmp_curve)
+      curve_dat <- rbind(curve_dat, tmp_curve)
+    } 
+    
+      curve_dat <- filter(curve_dat, max > 0.0002, complete == 990, !is.na(D), !chrom %in% c(3,10,12,18,17)) # , chrom != 10
+      curve_dat$D <- curve_dat$D
+        # convert distances to centimorgans
+      curve_dat$distance <- curve_dat$min
+      
+      print("Jacknifing curve")
+      # jacknife the fits:
+      jack_curve_fit <- jacknife_C(curve_dat)
+    
+      # prepare input for the weighted jacknife analysis
+      jin <- paste0("data/LASIDAD_", pop, "/genmap_curve/jacknife/Downsample6_mostLikely_", archaic, "_C_chromosome_fit_results.jin")
+      jout <- paste0("data/LASIDAD_", pop, "/genmap_curve/jacknife/Downsample6_mostLikely_", archaic, "_C_chromosome_fit_results.jout")
+      
+      jack_curve_fit %>% filter(inc != "all") %>% 
+        dplyr::select(inc, snps, inf_m) %>%
+        write.table(jin, sep = "\t", quote = F, row.names = F, col.names = F)
+      full_mean <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_m) %>% unlist()
+      full_a <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_a) %>% unlist()
+      full_C <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_C) %>% unlist()
+      
+      # run weighted jacknife
+      system(paste0("dowtjack -i ",jin, " -m ", full_mean,  " -o ", jout))
+  
+      jack_results <- read.table(jout)
+      inf_m <- jack_results[1, 1]
+      SE <- jack_results[1, 2]
+      inf_C <- jack_results[1, 3]
+      
+      # plot the fit as a line
+      curve_dat$fit <- full_a * exp(-inf_m * curve_dat$distance) + full_C
+
+      curve_dat$full_fit <- full_a * exp(-full_mean * curve_dat$distance) + full_C 
+      
+      mean_results_archaic <- curve_dat %>% group_by(distance, full_fit, fit) %>% 
+        summarize(D_sum = sum(D_sum), count = sum(count), D = D_sum / count) %>% 
+        mutate("archaic" = archaic, 
+               "pop" = pop,
+               "n_chroms" = length(unique(curve_dat$chrom)),
+               "chroms" = paste(unique(curve_dat$chrom), collapse = ";"),
+               "inf_m" = inf_m, 
+               "SE" = SE,
+               "inf_c" = inf_C)
+      
+      # write out results to run getposterior on
+      mean_results_archaic %>% 
+          ungroup() %>% 
+          mutate(dist = distance * 100, D_2 = D, D_3 = D, D_4 = D) %>%
+          select(dist, D, D_2, D_3, D_4, count) %>% 
+          write.table(paste0("data/LASIDAD/", pop, "/hg19/", archaic, "_results/genmap/LASIDAD_", pop, "_mostLikely_Downsample4_combinedD.txt"), quote = F, row.names = F, col.names = F, sep = "\t")
+      
+      
+      full_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit LASIDAD ", pop, "_", archaic, "\n Inferred Slope = ", round(full_mean), " C = ", round(full_C, 5), " SE = ", SE)) +
+        geom_line(aes(x = distance, y = full_fit), color = "red", size = 0.75)
+      plot(full_fit_p)
+      
+      
+      JK_fit_p <- ggplot(mean_results_archaic, aes(x = distance, y = D)) +
+        geom_point() +
+        theme_bw() + 
+        labs(x = "distance (in M)", y = "Covariance in Local Ancestry", title = paste0("Full Fit LASIDAD ", pop, "_", archaic, "\n Inferred Slope = ", round(inf_m), " C = ", round(full_C, 5), " SE = ", SE)) +
+        geom_line(aes(x = distance, y = fit), color = "red", size = 0.75)
+      plot(JK_fit_p)
+      
+    mean_results <- rbind(mean_results, mean_results_archaic)
+      
+  }
+}
+
+```
+
+```{r}
+
+mean_results %>% ungroup %>% select(pop, archaic, n_chroms, inf_m, SE, chroms) %>% unique() %>% View()
+
+ggplot(mean_results, aes(x = distance * 100, y = D, color = archaic)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c("darkorange2", "#45b6fe")) +
+  geom_line(aes(y = fit, color = archaic)) +
+  facet_wrap(~pop)
+
+```
+
+
+lets see what's happening with chromosome 14 - that one should have completed running for all versions
+```{r}
+g_dat <- read.table(paste0("data/choin/curve/DEN_results/genmap/choin_Oceania_fragments_08_mostLikely_OceaniaVariable_hg19_chr14_D.txt"))
+d_dat <- read.table(paste0("data/choin/curve/DEN_results/choin_Oceania_fragments_08_mostLikely_OceaniaVariable_hg19_chr14_D.txt"))
+
+colnames(g_dat) <- c("g_start", "g_end", "g_D", "g_D_sum", "g_comps", "g_total")
+g_dat$distance <- round(g_dat$g_start, 5) * 100
+colnames(d_dat) <- c("start", "end","d_D", "d_D_sum", "d_comps", "d_total")
+d_dat$distance <- d_dat$start / 1000000
+
+dat <- g_dat %>% select(distance, g_D) %>% merge(select(d_dat, distance, d_D), by = "distance")
+ggplot(dat, aes(x = d_D, y = g_D)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")
+
+dat %>% filter(distance > 0.02) %>% 
+ggplot(aes(x = d_D, y = g_D)) +
+  geom_point(aes(color = distance)) +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")
+
+dat %>% filter(distance > 0.02) %>% 
+ggplot(aes(x = d_D, y = g_D)) +
+  geom_point(aes(color = distance)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")
+
+dat %>% pivot_longer(cols = c("g_D", "d_D")) %>%
+  ggplot(aes(x = distance, y = value, color = name)) +
+  geom_point()
+
+g_model_exp <- nls(g_D ~ a * exp(-m * distance / 100), data = dat)
+g_inf_m <- coef(g_model_exp)[2]
+g_inf_a <- coef(g_model_exp)[1]
+
+d_model_exp <- nls(d_D ~ a * exp(-m * distance / 100), data = dat)
+d_inf_m <- coef(d_model_exp)[2]
+d_inf_a <- coef(d_model_exp)[1]
+
+dat$g_fit <- g_inf_a * exp(-g_inf_m * dat$distance / 100) 
+dat$d_fit <- d_inf_a * exp(-d_inf_m * dat$distance / 100) 
+
+dat %>% pivot_longer(cols = c("g_D", "d_D")) %>%
+  ggplot(aes(x = distance, y = value, color = name)) +
+  geom_point() +
+  geom_line(aes(y = g_fit), color = "red") +
+  geom_line(aes(y = d_fit), color = "blue")
+
+dat <- filter(dat, distance > 0.02)
+g_model_exp <- nls(g_D ~ a * exp(-m * distance / 100), data = dat)
+g_inf_m <- coef(g_model_exp)[2]
+g_inf_a <- coef(g_model_exp)[1]
+
+d_model_exp <- nls(d_D ~ a * exp(-m * distance / 100), data = dat)
+d_inf_m <- coef(d_model_exp)[2]
+d_inf_a <- coef(d_model_exp)[1]
+
+dat$g_fit <- g_inf_a * exp(-g_inf_m * dat$distance / 100) 
+dat$d_fit <- d_inf_a * exp(-d_inf_m * dat$distance / 100) 
+
+dat %>% pivot_longer(cols = c("g_D", "d_D")) %>%
+  ggplot(aes(x = distance, y = value, color = name)) +
+  geom_point() +
+  geom_line(aes(y = d_fit), color = "red") +
+  geom_line(aes(y = g_fit), color = "blue")
+
+```
+
+```{r}
+# repeat with ingroups
+g_dat <- read.table(paste0("data/choin/curve/DEN_results/genmap/choin_Oceania_fragments_08_mostLikely_OceaniaIngroup_hg19_chr14_D.txt"))
+d_dat <- read.table(paste0("data/choin/curve/DEN_results/choin_Oceania_fragments_08_mostLikely_OceaniaIngroup_hg19_chr14_D.txt"))
+
+colnames(g_dat) <- c("g_start", "g_end", "g_D", "g_D_sum", "g_comps", "g_total")
+g_dat$distance <- round(g_dat$g_start, 5) * 100
+colnames(d_dat) <- c("start", "end","d_D", "d_D_sum", "d_comps", "d_total")
+d_dat$distance <- d_dat$start / 1000000
+
+dat <- g_dat %>% select(distance, g_D) %>% merge(select(d_dat, distance, d_D), by = "distance")
+ggplot(dat, aes(x = d_D, y = g_D)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")
+
+dat %>% filter(distance > 0.02) %>% 
+ggplot(aes(x = d_D, y = g_D)) +
+  geom_point(aes(color = distance)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")
+
+dat %>%
+ggplot(aes(x = d_D, y = g_D)) +
+  geom_point(aes(color = distance)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")
+
+dat %>% pivot_longer(cols = c("g_D", "d_D")) %>%
+  ggplot(aes(x = distance, y = value, color = name)) +
+  geom_point()
+
+```
+
+
+```{r}
+archaic <- "NEA"
+for (method in c("Variable", "Ingroup")){
+  for (class in c("ND10", "mostLikely")){
+  # read in the curve data for each simulation
+  curve_dat <- data.frame()
+  for (i in 1:20){
+    print(i)
+    tmp_curve <- read.table(paste0("data/choin/curve/", archaic, "/choin_Oceania_fragments_08_", class, "_Oceania", method, "_hg19_chr", i, "_D.txt"))
+    colnames(tmp_curve) <- c("min", "max", "D", "D_sum", "count", "snps")  
+    tmp_curve$chrom <- i
+    curve_dat <- rbind(curve_dat, tmp_curve)
+  } 
+    curve_dat <- filter(curve_dat, max > 20000)
+      # convert distances to centimorgans
+    curve_dat$distance <- curve_dat$min / 1000000
+    
+    # plot the curves for each chromosome
+    p_chrom <- ggplot(curve_dat, aes(x = distance, y = D)) +
+      geom_point(size = 0.1) +
+      labs(x = "Distance (in cM)", y = "Ancestry D", title = paste0("Each Chromosome Plotted Separately, choin Oceania:", method, "-", class))
+    plot(p_chrom)
+    
+    print("Jacknifing curve")
+    # jacknife the fits:
+    jack_curve_fit <- jacknife(curve_dat)
+  
+    # prepare input for the weighted jacknife analysis
+    jin <- paste0("data/choin/curve/jacknife/", method, "_", class, "_chromosome_fit_results.jin")
+    jout <- paste0("data/choin/curve/jacknife/", method, "_", class, "_chromosome_fit_results.jout")
+    
+    # I updated the count by hand for the runs that didn't finish - later can write this out again
+    jack_curve_fit %>% filter(inc != "all") %>% 
+      dplyr::select(inc, snps, inf_m) %>%
+      write.table(jin, sep = "\t", quote = F, row.names = F, col.names = F)
+    full_mean <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_m) %>% unlist()
+    full_a <- filter(jack_curve_fit, inc == "all") %>% dplyr::select(inf_a) %>% unlist()
+    
+    # run weighted jacknife
+    system(paste0("dowtjack -i ",jin, " -m ", full_mean,  " -o ", jout))
+
+    jack_results <- read.table(jout)
+    inf_m <- jack_results[1, 1]
+    SE <- jack_results[1, 2]
+    
+    print(inf_m)
+    print(full_mean)
+    # plot the fit as a line
+    curve_dat$fit <- full_a * exp(-inf_m * curve_dat$distance / 100) 
+    
+    mean_p <- curve_dat  %>% group_by(distance, fit) %>% summarize(D = mean(D)) %>% 
+    ggplot(aes(x = distance, y = D)) +
+      geom_point() +
+      theme_bw() + 
+      labs(x = "distance (in cM)", y = "Ancestry D", title = paste0("choin Oceania: ", method, "-", class))
+    plot(mean_p)
+    
+    fit_p <- curve_dat  %>% group_by(distance, fit) %>% summarize(D = mean(D)) %>% 
+    ggplot(aes(x = distance, y = D)) +
+      geom_point() +
+      theme_bw() + 
+      labs(x = "distance (in cM)", y = "Ancestry D", title = paste0("choin Oceania: ", method, "-", class, "\n Inferred Slope = ", round(inf_m), " jacknifed_SD = ", SE)) +
+      geom_line(aes(x = distance, y = fit), color = "red", size = 0.75)
+    plot(fit_p)
+  }
+}
+```
+

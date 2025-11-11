@@ -1,0 +1,354 @@
+---
+title: "Affinity Analysis"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(MASS)
+library(tidyverse)
+
+# set plotting settings and variables
+theme_set(theme_bw() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)))
+
+# countour plot parameters:
+zoom=F
+xlab="Match to Altai Neanderthal"
+ylab="Match to Altai Denisovan"
+level1=seq(0.3,0.9,0.1)
+level2=seq(1,30,1)
+
+```
+
+```{r}
+# a function for finding how much is reconstructed for each dataset
+get_synthetic <- function(dat){
+  all <- dat %>% summarize(sum(length) / 1000000)
+    den <- dat %>% filter(den_affinity >= 0.3, nea_affinity <= 0.3) %>% summarize(sum(length) / 1000000)
+  den_high <- dat %>% filter(den_affinity >= 0.7, nea_affinity <= 0.3) %>% summarize(sum(length) / 1000000)
+  den_low <- dat %>% filter(den_affinity < 0.7, den_affinity >= 0.4, nea_affinity <= 0.3)%>% summarize(sum(length) / 1000000)
+    ND01 <- dat %>% filter(ND01 > 0, ND10 == 0)%>% summarize(sum(length) / 1000000)
+    ND01_high <- dat %>% filter(ND01 > 0, ND10 == 0, den_affinity >= 0.7)%>% summarize(sum(length) / 1000000)
+    ND01_low <- dat %>% filter(ND01 > 0, ND10 == 0, den_affinity < 0.7, den_affinity >= 0.4)%>% summarize(sum(length) / 1000000)
+  nea <- dat %>% filter(nea_affinity >= 0.5, den_affinity <= 0.3) %>% summarize(sum(length) / 1000000)
+  
+  tmp <- data.frame("all" = all, "den_high" = den_high, "den_low" = den_low, "ND01_high" = ND01_high, "ND01_low" = ND01_low, "nea" = nea, "den" = den)
+  colnames(tmp) <- c("all", "den_high", "den_low", "ND01_high", "ND01_low", "nea", "den")
+  return(tmp)
+}
+
+```
+
+```{r, echo = F}
+# a function for classifying each fragment
+add_classes <- function(dat){
+  dat$class_1 <- ifelse(dat$nea_overlap > dat$den_overlap, "Neanderthal", 
+                       ifelse(dat$nea_overlap < dat$den_overlap, "Denisova", 
+                              ifelse(dat$nea_overlap == 0 & dat$den_overlap ==  0, "None",
+                                     ifelse(dat$nea_overlap == dat$den_overlap, "Both", "Problem"))))
+  
+  print("CLASS 1 Done")
+  dat %>% group_by(class_1) %>% summarize(n()) %>% print()
+
+    
+  dat$class_1_LS <- ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) > dat$Denisova, "Neanderthal", 
+                     ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) < dat$Denisova, "Denisova", 
+                            ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) == 0 & dat$Denisova ==  0, "None",
+                                   ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) == dat$Denisova, "Both", "Problem"))))
+  
+  print("CLASS 1 LS Done")
+  dat %>% group_by(class_1_LS) %>% summarize(n()) %>% print()
+
+  dat$class_2 <- ifelse(dat$ND01 > 0 & dat$ND10 == 0, "ND01", 
+                         ifelse(dat$ND10 > 0 & dat$ND01 == 0, "ND10", 
+                                ifelse(dat$ND11 > 0 & dat$ND01 == 0 & dat$ND10 == 0, "ND11", 
+                                       ifelse(dat$ND01 == 0 & dat$ND10 == 0 & dat$ND11 == 0, "ND00", "Mosaic"))))
+  
+  print("CLASS 2 Done")
+  dat %>% group_by(class_2) %>% summarize(n()) %>% print()
+  return(dat)
+}
+
+```
+
+
+```{r}
+# choin lengths
+choin_pops <- c("VAN", "Paiwan", "PNG", "Agta", "Atayal", "BKA", "Cebuano", "EastAsia", "Oceania", "POL", "SCI", "SLI", "SoutheastAsia")
+
+choin_lengths <- data.frame()
+
+for (pop in choin_pops){
+  print(pop)
+  dat <- read.table(paste0("data/choin/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+ 
+  for (thresh in c(10, 20, 30, 40)){
+    dat <- filter(dat, snps >= thresh)
+    # countour plots
+    title = paste0(pop, "\nat least ", thresh)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_contour_.pdf"), height = 4, width = 4.5)
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level1,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level2,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8,add=T);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    dev.off()
+      
+    breaks_seq <- seq(0.3, 1, 0.02)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat,den_affinity > 0.3, nea_affinity < 0.2), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_ND01_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat, ND01 > 0, ND10 == 0), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    # get the amount reconstructed with varying cutoffs
+    tmp_lengths <- get_synthetic(dat)
+    tmp_lengths$pop <- pop
+    tmp_lengths$thresh <- thresh
+    tmp_lengths$dataset <- "choin"
+    choin_lengths <- rbind(choin_lengths, tmp_lengths)
+  }
+}
+
+
+```
+
+Investigate the fragments with high Den affinity - do they cluster to a chromosome? No
+Are they shorter than others?
+```{r}
+filter(dat, den_affinity == 1) %>% group_by(chrom) %>% summarize(n())
+filter(dat, den_affinity == 1, nea_affinity < 0.3, den_affinity > 0.3) %>% summarize(mean(length))
+filter(dat, den_affinity < 1, nea_affinity < 0.3, den_affinity > 0.3) %>% summarize(mean(length))
+```
+
+```{r}
+# 1000 Genomes
+G1000_pops <- c("CHB", "EAS", "PJL", "SAS")
+G1000_lengths <- data.frame()
+
+for (pop in G1000_pops){
+  print(pop)
+  dat <- read.table(paste0("data/1000G/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  
+  for (thresh in c(10, 20, 30, 40)){
+    dat <- filter(dat, snps >= thresh)
+
+    # countour plots
+    title = paste0(pop, "\nat least ", thresh)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_contour_.pdf"), height = 4, width = 4.5)
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level1,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level2,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8,add=T);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    dev.off()
+      
+    breaks_seq <- seq(0.3, 1, 0.02)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat,den_affinity > 0.3, nea_affinity < 0.2), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_ND01_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat, ND01 > 0, ND10 == 0), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    tmp_lengths <- get_synthetic(dat)
+    tmp_lengths$pop <- pop
+    tmp_lengths$thresh <- thresh
+    tmp_lengths$dataset <- "1000G"
+    G1000_lengths <- rbind(G1000_lengths, tmp_lengths)
+  }
+}
+
+
+```
+
+```{r}
+# GAv1
+GAv1_pops <- c("AET", "ATI", "PAP", "KOR", "JPN", "Indonesia", "Philippines", "SEA", "SAS", "NEA", "OCE", "Mongolia", "India")
+GAv1_lengths <- data.frame()
+for (pop in GAv1_pops){
+  print(pop)
+  dat <- read.table(paste0("data/GAv1/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  
+  for (thresh in c(10, 20, 30, 40)){
+    dat <- filter(dat, snps >= thresh)
+
+    # countour plots
+    title = paste0(pop, "\nat least ", thresh)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_contour_.pdf"), height = 4, width = 4.5)
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level1,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level2,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8,add=T);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    dev.off()
+      
+    breaks_seq <- seq(0.3, 1, 0.02)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat,den_affinity > 0.3, nea_affinity < 0.2), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+      pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_ND01_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat, ND01 > 0, ND10 == 0), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    tmp_lengths <- get_synthetic(dat)
+    tmp_lengths$pop <- pop
+    tmp_lengths$thresh <- thresh
+    tmp_lengths$dataset <- "GAv1"
+    GAv1_lengths <- rbind(GAv1_lengths, tmp_lengths)
+  }
+}
+
+```
+LASIDAD
+
+```{r}
+
+LASI_pops <- c("North", "South", "West", "East", "Central", "North-East", "singlePulse", "multiPulse", "noMultiPulse")
+
+LASI_lengths <- data.frame()
+for (pop in LASI_pops){
+  print(pop)
+  dat <- read.table(paste0("data/LASIDAD/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  
+  for (thresh in c(10, 20, 30, 40)){
+    dat <- filter(dat, snps >= thresh)
+
+    # countour plots
+    title = paste0(pop, "\nat least ", thresh)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_contour_.pdf"), height = 4, width = 4.5)
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level1,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level2,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8,add=T);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    dev.off()
+      
+    breaks_seq <- seq(0.3, 1, 0.02)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat,den_affinity > 0.3, nea_affinity < 0.2), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+      pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_ND01_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat, ND01 > 0, ND10 == 0), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    tmp_lengths <- get_synthetic(dat)
+    tmp_lengths$pop <- pop
+    tmp_lengths$thresh <- thresh
+    tmp_lengths$dataset <- "LASIDAD"
+    LASI_lengths <- rbind(LASI_lengths, tmp_lengths)
+  }
+}
+```
+
+HGDP Oceania
+```{r}
+
+HGDP_lengths <- data.frame()
+for (pop in "OCEANIA"){
+  print(pop)
+  dat <- read.table(paste0("data/HGDP/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  
+  for (thresh in c(10, 20, 30, 40)){
+    dat <- filter(dat, snps >= thresh)
+
+    # countour plots
+    title = paste0(pop, "\nat least ", thresh)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_contour_.pdf"), height = 4, width = 4.5)
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level1,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    contour(kde2d(dat$nea_affinity,dat$den_affinity, lims=c(0,1,0,1),n=100),xaxs="i",yaxs="i",xlab=xlab,ylab=ylab,main=title,levels=level2,las=1,cex.lab=1.5,cex.axis=1.4,cex.main=1.5,lty=5,labcex=0.8,add=T);abline(h=seq(0.2,0.8,0.2),v=seq(0.2,0.8,0.2),lty=3,col="gray")
+    dev.off()
+      
+    breaks_seq <- seq(0.3, 1, 0.02)
+    pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat,den_affinity > 0.3, nea_affinity < 0.2), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+      pdf(paste0("plots/matchrate/", pop, "_filter", thresh, "_fragments_ND01_histogram_.pdf"), height = 4, width = 4.5)
+    p <- ggplot(filter(dat, ND01 > 0, ND10 == 0), aes(x = den_affinity)) +
+      geom_histogram(breaks = breaks_seq) +
+      labs(title = title) +
+      labs(x = "Denisova Affinity (>= 0.3)", y = "Number of Fragments") +
+      theme_bw()
+    plot(p)
+    dev.off()
+    
+    tmp_lengths <- get_synthetic(dat)
+    tmp_lengths$pop <- pop
+    tmp_lengths$thresh <- thresh
+    tmp_lengths$dataset <- "HGDP"
+    HGDP_lengths <- rbind(HGDP_lengths, tmp_lengths)
+  }
+}
+```
+
+```{r}
+OCE <- c("VAN", "PNG", "BKA", "Oceania", "POL", "SCI", "SLI", "PAP", "OCE", "OCEANIA")
+SEA <- c( "Agta", "Atayal", "Indonesia", "Philippines", "SEA", "SoutheastAsia", "AET", "ATI")
+EAS <- c("CHB", "EAS", "Paiwan", "EastAsia", "JPN", "NEA", "KOR", "Mongolia", "Atayal", "Cebuano")
+SAS <- c("SAS", "India", "PJL")
+lengths <- do.call(rbind, list(LASI_lengths, G1000_lengths, choin_lengths, GAv1_lengths, HGDP_lengths))
+lengths <- lengths %>% mutate(Region = ifelse(dataset == "LASIDAD" | pop %in% SAS, "SouthAsia", 
+                                              ifelse(pop %in% OCE, "Oceania", 
+                                                     ifelse(pop %in% SEA, "SouthEastAsia", 
+                                                            ifelse(pop %in% EAS, "EastAsia", "problem")))))
+lengths %>% pivot_longer(cols = c(den, nea, den_low, den_high, ND01_low, ND01_high)) %>% 
+  filter(thresh == 30, name != "nea", name != "den", name %in% c("den_high", "den_low")) %>%
+ggplot(aes(x = pop, y = value, fill = name)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_grid(~Region, scales = "free", space = "free")
+
+lengths %>% filter(thresh == 30, !(pop == "SAS" & dataset == "1000G")) %>% mutate(frac_high = den_high / den, frac_low = den_low / den) %>%
+  ggplot(aes(x = pop, y = frac_high, fill = dataset)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(~Region, scales = "free", space = "free")
+
+lengths %>% filter(thresh == 30, !(pop == "SAS" & dataset == "1000G")) %>% mutate(frac_high = den_high / den, frac_low = den_low / den) %>%
+  ggplot(aes(x = frac_low, y = frac_high, color = Region)) +
+  geom_point()
+  
+```

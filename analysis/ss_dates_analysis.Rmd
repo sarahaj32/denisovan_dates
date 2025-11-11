@@ -1,0 +1,125 @@
+---
+title: "Inferred Neanderthal Gene Flow: PJL"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Goal: compare how the single sample statistic (Priya's DATES or indroll_v2) to Sriram's LD-based statistic for dating Neanderthal gene flow in South Asia (using 1000G's PJL population). In this dataset, there are 52,875 positions that are segretating in PJL, derived in Vindija Neanderthal, not in Denisova, and ancestral in YRI. This is using the "modern" dataset, so no inferred local archaic ancestry.
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+inds = read.table("data/1000G/inds/PJL.inds")$V1
+```
+
+```{r}
+date_list <- vector("list", length(inds))
+for(i in 1:length(inds)){
+  ind = inds[i]
+  tmp_date <- read.table(paste0("data/1000G/PJL/modern/dating/indroll/", ind, "/", ind, "_ND10AfrAnc_dateCorrections.out"))
+  tmp_date$ind <- ind
+  date_list[[i]] <- tmp_date
+}
+
+dates <- data.frame(do.call(rbind, date_list))
+colnames(dates) <- c("date", "std", "min", "max", "ind")
+
+dates <- group_by(dates, ind) %>% mutate(type = seq_along(ind)) %>%
+  mutate(type = ifelse(type == 1, "raw", ifelse(type == 2, "corrected", "inferred_date")))
+
+LD <- read.table("data/1000G/PJL/modern/dating/computed/ND10AfrAnc_dateCorrections.out")
+colnames(LD) <- c("date", "std", "min", "max")
+LD$type <- c("raw", "corrected", "inferred_date")
+LD$ind <- "LD-method"
+
+dates <- rbind(dates, LD) %>% ungroup()
+```
+
+```{r}
+# calculate the mean of the estimates
+dates %>% filter(type == "inferred_date", ind != "LD-method") %>% 
+  summarize(mean(date), sd(date))
+
+# plot
+dates %>% 
+  filter(type == "inferred_date") %>% 
+  ggplot(aes(x = ind, y = date, color = ind == "LD-method")) + 
+    geom_point() + 
+    geom_errorbar(aes(ymin = min, ymax = max)) +
+    theme_bw() +
+    labs(y = "corrected inferred date", x = "PJL individuals", title = "Corrected Dates PJL") + 
+    geom_hline(yintercept = 29591.07, color = "blue") +
+    geom_hline(yintercept = 29591.07 - 5993, color = "blue", linetype = "dashed") +
+    geom_hline(yintercept = 29591.07 + 5993, color = "blue", linetype = "dashed") +
+    theme(axis.text.x = element_blank())
+```
+
+```{r}
+# calculate the mean of the estimates
+dates %>% filter(type == "raw", ind != "LD-method") %>% 
+  summarize(mean(date), sd(date))
+
+# plot
+dates %>% 
+  filter(type == "raw") %>% 
+  ggplot(aes(x = ind, y = date, color = ind == "LD-method")) + 
+    geom_point() + 
+    geom_errorbar(aes(ymin = min, ymax = max)) +
+    theme_bw() +
+    labs(y = "Inferred Generationsn tAdmix", x = "PJL individuals", title = "Raw Generations tAdmix") + 
+    geom_hline(yintercept = 887.59, color = "blue") +
+    geom_hline(yintercept = 887.59 - 158.6, color = "blue", linetype = "dashed") +
+    geom_hline(yintercept = 887.59 + 158.6, color = "blue", linetype = "dashed") +
+    theme(axis.text.x = element_blank())
+```
+Repeat for Denisovan (There are not really enough SNPs, but could be interesting!)
+
+```{r}
+date_list <- vector("list", length(inds))
+for(i in 1:length(inds)){
+  ind = inds[i]
+  file_path <- paste0("data/1000G/PJL/modern/dating/indroll/", ind, "/", ind, "_ND01AfrAnc_dateCorrections.out")
+  if (!file.exists(file_path) || file.info(file_path)$size == 0) {
+    next
+  }
+  tmp_date <- read.table(file_path)
+  tmp_date$ind <- ind
+  date_list[[i]] <- tmp_date
+}
+
+dates <- data.frame(do.call(rbind, date_list))
+colnames(dates) <- c("date", "std", "min", "max", "ind")
+
+dates <- group_by(dates, ind) %>% mutate(type = seq_along(ind)) %>%
+  mutate(type = ifelse(type == 1, "raw", ifelse(type == 2, "corrected", "inferred_date")))
+
+LD <- read.table("data/1000G/PJL/modern/dating/computed/ND01AfrAnc_dateCorrections.out")
+colnames(LD) <- c("date", "std", "min", "max")
+LD$type <- c("raw", "corrected", "inferred_date")
+LD$ind <- "LD-method"
+
+dates <- rbind(dates, LD) %>% ungroup()
+```
+
+```{r}
+# calculate the mean of the estimates
+dates %>% filter(type == "inferred_date", ind != "LD-method") %>% 
+  summarize(median(date), mean(date), sd(date)) %>% print()
+
+# plot
+dates %>% 
+  filter(type == "inferred_date") %>% 
+  ggplot(aes(x = ind, y = date, color = ind == "LD-method")) + 
+    geom_point() + 
+    geom_errorbar(aes(ymin = min, ymax = max)) +
+    theme_bw() +
+    coord_cartesian(ylim = c(0, 125000)) +  # <--- use this instead
+    labs(y = "corrected inferred date", x = "PJL individuals", title = "Corrected Dates PJL") + 
+    geom_hline(yintercept = 93894, color = "blue") +
+    theme(axis.text.x = element_blank())
+```
+

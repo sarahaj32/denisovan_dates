@@ -1,0 +1,312 @@
+---
+title: "Archaic Ancestry"
+output: html_notebook
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(tidyverse)
+library(openxlsx)
+```
+
+In this notebook, I read in all of the hmmix outputs with archaic annotations, and for every dataset I combine with metadata,
+calculate the amount of archaic ancestry in every individual and haplotype, with varying classification methods 
+(I am using the 2 methods outlined in LASI-DAD supplement page 64)
+
+This is a nice little helper function that labels fragments based on their sharing with archaics
+```{r}
+add_classes <- function(dat){
+  dat$class_1 <- ifelse(dat$nea_overlap > dat$den_overlap, "Neanderthal", 
+                       ifelse(dat$nea_overlap < dat$den_overlap, "Denisova", 
+                              ifelse(dat$nea_overlap == 0 & dat$den_overlap ==  0, "None",
+                                     ifelse(dat$nea_overlap == dat$den_overlap, "Both", "Problem"))))
+  
+  print("CLASS 1 Done")
+  dat %>% group_by(class_1) %>% summarize(n()) %>% print()
+
+    
+  dat$class_1_LS <- ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) > dat$Denisova, "Neanderthal", 
+                     ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) < dat$Denisova, "Denisova", 
+                            ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) == 0 & dat$Denisova ==  0, "None",
+                                   ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) == dat$Denisova, "Both", "Problem"))))
+  
+  print("CLASS 1 LS Done")
+  dat %>% group_by(class_1_LS) %>% summarize(n()) %>% print()
+
+  dat$class_2 <- ifelse(dat$ND01 > 0 & dat$ND10 == 0, "ND01", 
+                         ifelse(dat$ND10 > 0 & dat$ND01 == 0, "ND10", 
+                                ifelse(dat$ND11 > 0 & dat$ND01 == 0 & dat$ND10 == 0, "ND11", 
+                                       ifelse(dat$ND01 == 0 & dat$ND10 == 0 & dat$ND11 == 0, "ND00", "Mosaic"))))
+  
+  print("CLASS 2 Done")
+  dat %>% group_by(class_2) %>% summarize(n()) %>% print()
+  return(dat)
+}
+```
+
+
+Goal: quantify and compare the amount of archaic ancestry per population. 
+
+```{r}
+LASI <- read.table("data/LASIDAD/LASIDAD_fragments_08_annotated.txt", header = T)
+meta <- read.table("/global/scratch/p2p3/pl1_moorjani/kerdoncuff/LASI-DAD_paper/METADATA/full_metadata_LASIDAD_2762_to2620.txt", header = T, comment.char="")
+meta <- meta %>% filter(filter2 == "2620_list") %>% dplyr::select(long_ID, region)
+
+LASI <- merge(LASI, meta, by.x = "name", by.y = "long_ID")
+LASI$length <- LASI$end - LASI$start
+LASI <- add_classes(LASI)
+
+```
+make a quick plot of fragment length distribution
+```{r}
+check <- filter(LASI, name == "G-LSID-LS000001-BL-USC-L0001", class_1 == "Neanderthal") %>%
+  mutate(length = length / 1000)
+
+  geom_histogram(binwidth = 20) +
+  labs(x = "Fragment Length (kb)", y = "Number of Fragments", title = "Fragment Length Distribution")
+
+```
+
+
+Generate per individual statistics
+```{r}
+class1 <- LASI %>% group_by(name, haplotype, region.y, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1) <- c("ID", "haplotype", "population", "class_1", "n", "amount")
+write.table(class1, "summary_dat/hmmix/LASI_class1_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_call <- LASI %>% filter(comp > 10) %>% group_by(name, haplotype, region.y, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1_call) <- c("ID", "haplotype", "population", "class_1", "n", "amount")
+write.table(class1_call, "summary_dat/hmmix/LASI_class1_call10_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_LS <- LASI %>% group_by(name, haplotype, region.y, class_1_LS) %>% summarize(n_LS = n(), amount_LS = sum(length))
+colnames(class1_LS) <- c("ID", "haplotype", "population", "class_1", "n", "amount")
+write.table(class1_LS, "summary_dat/hmmix/LASI_class1LS_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+
+class2 <- LASI %>% group_by(name, haplotype, region.y, class_2) %>% summarize(n = n(), amount = sum(length))
+colnames(class2) <- c("ID", "haplotype", "population", "class_2", "n", "amount")
+write.table(class2, "summary_dat/hmmix/LASI_class2_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+LASI <- NULL
+```
+
+
+
+Repeat for each dataset:
+
+```{r}
+G1000 <- read.table("data/1000G/1000G_fragments_08_annotated.txt", header = T)
+meta <- read.table("/global/scratch/p2p3/pl1_moorjani/SHARED_LAB/DATASETS/hg19/1000G/integrated_call_samples_v3.20130502.ALL.panel", header = T, comment.char="")
+
+G1000 <- merge(G1000, meta, by.x = "name", by.y = "sample")
+G1000$length <- G1000$end - G1000$start
+
+G1000 <- add_classes(G1000)
+
+class1 <- G1000 %>% group_by(name, haplotype, pop.y, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1) <- c("ID", "haplotype", "population", "class_1", "n", "amount")
+write.table(class1, "summary_dat/hmmix/1000G_class1_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_call <- G1000 %>% filter(comp > 10) %>% group_by(name, haplotype, pop.y, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1_call) <- c("ID", "haplotype", "population", "class_1", "n", "amount")
+write.table(class1_call, "summary_dat/hmmix/1000G_class1_call10_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_LS <- G1000 %>% group_by(name, haplotype, pop.y, class_1_LS) %>% summarize(n_LS = n(), amount_LS = sum(length))
+colnames(class1_LS) <- c("ID", "haplotype", "population", "class_1", "n", "amount")
+write.table(class1_LS, "summary_dat/hmmix/1000G_class1LS_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+
+class2 <- G1000 %>% group_by(name, haplotype, pop.y, class_2) %>% summarize(n = n(), amount = sum(length))
+colnames(class2) <- c("ID", "haplotype", "population", "class_2", "n", "amount")
+write.table(class2, "summary_dat/hmmix/1000G_class2_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+G1000 <- NULL
+```
+
+```{r}
+class1 %>% filter() %>% group_by(ID, population, class_1) %>% summarize(amount = sum(amount)) %>% group_by(class_1, population) %>% summarize(amount = mean(amount) / 1000000) %>%
+  ggplot(aes(x = population, y = amount, fill = class_1)) +
+    geom_bar(stat = "identity", position = "stack") +
+    theme_bw() +
+    geom_hline(yintercept = 250) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1))
+```
+
+```{r}
+HGDP <- read.table("data/HGDP/HGDP_fragments_08_annotated.txt", header = T)
+meta <- read.table("/global/scratch/p2p3/pl1_moorjani/SHARED_LAB/DATASETS/hg38/HGDP_WGS/hgdp_wgs.20190516.metadata.txt", header = T, comment.char="")
+meta <- select(meta, sample, population, region)
+
+HGDP <- merge(HGDP, meta, by.x = "name", by.y = "sample")
+HGDP$length <- HGDP$end - HGDP$start
+
+HGDP <- add_classes(HGDP)
+
+class1 <- HGDP %>% group_by(name, haplotype, region.y, population, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1) <- c("ID", "haplotype", "population", "population_specific", "class_1", "n", "amount")
+write.table(class1, "summary_dat/hmmix/HGDP_class1_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_LS <- HGDP %>% group_by(name, haplotype, region.y, population, class_1_LS) %>% summarize(n_LS = n(), amount_LS = sum(length))
+colnames(class1_LS) <- c("ID", "haplotype", "population", "population_specific", "class_1", "n", "amount")
+write.table(class1_LS, "summary_dat/hmmix/HGDP_class1LS_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+
+class2 <- HGDP %>% group_by(name, haplotype, region.y, population, class_2) %>% summarize(n = n(), amount = sum(length))
+colnames(class2) <- c("ID", "haplotype","population", "population_specific", "class_2", "n", "amount")
+write.table(class2, "summary_dat/hmmix/HGDP_class2_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+HGDP <- NULL
+```
+
+```{r}
+choin <- read.table("data/choin/choin_fragments_08_annotated.txt", header = T)
+choin$name <- gsub(".decoded", "", choin$name)
+meta <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/superarchaic_introgression/Choin_analysis/sample_info/included_samples.tsv", sep = "\t", header = T, comment.char="#", skip = 1)
+meta <- select(meta, Sample.ID, Population, Region, Three.letter.code)
+
+choin <- merge(choin, meta, by.x = "name", by.y = "Sample.ID")
+choin$length <- choin$end - choin$start
+
+choin <- add_classes(choin)
+
+class1 <- choin %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1, "summary_dat/hmmix/choin_class1_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_LS <- choin %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_1_LS) %>% summarize(n_LS = n(), amount_LS = sum(length))
+colnames(class1_LS) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1_LS, "summary_dat/hmmix/choin_class1LS_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_call <- choin %>% filter(comp > 10) %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1_call) <-  c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1_call, "summary_dat/hmmix/choin_class1_call10_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class2 <- choin %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_2) %>% summarize(n = n(), amount = sum(length))
+colnames(class2) <- c("ID", "haplotype", "population", "population_specific", "code", "class_2", "n", "amount")
+write.table(class2, "summary_dat/hmmix/choin_class2_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+choin <- NULL
+
+```
+Repeat but with hg19 choin
+```{r}
+choin <- read.table("data/choin/choin_fragments_08_hg19_annotated.txt", header = T)
+meta <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/superarchaic_introgression/Choin_analysis/sample_info/included_samples.tsv", sep = "\t", header = T, comment.char="#", skip = 1)
+meta <- select(meta, Sample.ID, Population, Region, Three.letter.code)
+
+choin <- merge(choin, meta, by.x = "name", by.y = "Sample.ID")
+choin$length <- choin$end - choin$start
+
+choin <- add_classes(choin)
+
+class1 <- choin %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1, "summary_dat/hmmix/choin_hg19_class1_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_LS <- choin %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_1_LS) %>% summarize(n_LS = n(), amount_LS = sum(length))
+colnames(class1_LS) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1_LS, "summary_dat/hmmix/choin_hg19_class1LS_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_call <- choin %>% filter(comp > 10) %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1_call) <-  c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1_call, "summary_dat/hmmix/choin_hg19_class1_call10_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class2 <- choin %>% group_by(name, haplotype, Region, Population, Three.letter.code, class_2) %>% summarize(n = n(), amount = sum(length))
+colnames(class2) <- c("ID", "haplotype", "population", "population_specific", "code", "class_2", "n", "amount")
+write.table(class2, "summary_dat/hmmix/choin_hg19_class2_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+choin <- NULL
+
+```
+
+
+```{r}
+GAv1 <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/GAv1/GAv1_fragments_08_annotated.txt", header = T)
+meta <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/GAv1/inds/inds_w_data_anno.txt", header = T, sep = "\t")
+# to remove (also in 10000G): GBR, ITU, KHV, YRI, STU, HAN, DAI
+# remove individuals with relatives, and african individuals
+meta <- filter(meta, !Population.short.name %in% c("GBR", "ITU", "KHV", "YRI", "STU", "HAN", "DAI")) %>%
+  filter(Related.to.other.samples.in.the.data.set.. == "") %>%
+  filter(Region != "Africa")
+write.table(meta, "data/GAv1/inds/used_individuals_w_data.txt", sep = "\t", quote = F, row.names = F)
+
+meta <- dplyr::select(meta, GA.sample.ID, Population.group, Region, Population.short.name, Public, Related.to.other.samples.in.the.data.set.., X..Neanderthal.ancestry, X..Denisovan.ancestry)
+# There are 1123 individuals who we ran hmmix on
+# of those that were not included, 616 were public (almost certainly from 1000G), 17 are Baining Papuan which there is a note in the readme about how they could not be released.
+# there are additionally Malaysian samples which are not in the BCF. Laurits makes note of that here:
+# /global/scratch/p2p3/pl1_moorjani/lauritsskov2/ArchaicSegments/helperfiles/GA100K_individuals
+#meta[!meta$GA.sample.ID %in% GAv1$name, ] %>% View()
+GAv1 <- merge(GAv1, meta, by.x = "name", by.y = "GA.sample.ID")
+GAv1$length <- GAv1$end - GAv1$start
+
+GAv1 <- add_classes(GAv1)
+
+class1 <- GAv1 %>% group_by(name, haplotype, Region, Population.group, Population.short.name, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1, "summary_dat/hmmix/GAv1_class1_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_LS <- GAv1 %>% group_by(name, haplotype, Region, Population.group, Population.short.name, class_1_LS) %>% summarize(n_LS = n(), amount_LS = sum(length))
+colnames(class1_LS) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1_LS, "summary_dat/hmmix/GAv1_class1LS_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+class1_call <- GAv1 %>% filter(comp > 10) %>% group_by(name, haplotype, Region, Population.group, Population.short.name, class_1) %>% summarize(n = n(), amount = sum(length))
+colnames(class1_call) <- c("ID", "haplotype", "population", "population_specific", "code", "class_1", "n", "amount")
+write.table(class1_call, "summary_dat/hmmix/GAv1_class1_call10_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+
+class2 <- GAv1 %>% group_by(name, haplotype, Region, Population.group, Population.short.name, class_2) %>% summarize(n = n(), amount = sum(length))
+colnames(class2) <- c("ID", "haplotype", "population", "population_specific", "code", "class_2", "n", "amount")
+write.table(class2, "summary_dat/hmmix/GAv1_class2_perIndiv.txt", sep = "\t", quote = F, row.names = F)
+
+#GAv1 <- NULL
+```
+
+Count how many individuals are in each population - to decide which to use
+```{r}
+class1 %>% ungroup %>% select(population, population_specific, code, ID) %>% unique() %>% group_by(population, population_specific, code) %>% summarize(n()) %>% View()
+```
+
+
+Here is a little plot where I can make sure that my outputs seem reasonable - should combine these later
+```{r}
+class1 %>% group_by(ID, population_specific, population, class_1) %>% summarize(amount = sum(amount)) %>% group_by(class_1, population_specific, population) %>% summarize(amount = mean(amount) / 1000000) %>%
+  ggplot(aes(x = population_specific, y = amount, fill = class_1)) +
+    geom_bar(stat = "identity", position = "stack") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1)) +
+    facet_grid(~population, scales = "free", space = "free")
+```
+
+Finally get Laurits' results in an easy to process way (from the LASIDAD supplement, table 6)
+
+```{r}
+LS_lasi <- read.xlsx("analysis/reference/LASIDAD_supTable6.xlsx", sheet = 1, startRow = 2)
+LS_lasi <- LS_lasi[, c(1,2,7)] %>% 
+  fill(Segment.type) %>%
+  separate(`0.8`, into = c("0.8", "percent"), sep = " ") %>%
+  mutate(class = "class1", dataset = "LASIDAD")
+
+LS_WW <- read.xlsx("analysis/reference/LASIDAD_supTable6.xlsx", sheet = 2, startRow = 2)
+LS_WW <- LS_WW[, c(1,2,7)] %>% 
+  fill(Segment.type) %>%
+  separate(`0.8`, into = c("0.8", "percent"), sep = " ") %>%
+  mutate(class = "class1", dataset = "WW")
+
+LS_lasi_2 <- read.xlsx("analysis/reference/LASIDAD_supTable6.xlsx", sheet = 3, startRow = 2)
+LS_lasi_2 <- LS_lasi_2[, c(1,2,7)] %>% 
+  fill(Segment.type) %>%
+  separate(`0.8`, into = c("0.8", "percent"), sep = " ") %>%
+  mutate(class = "class2", dataset = "LASIDAD")
+
+LS_WW_2 <- read.xlsx("analysis/reference/LASIDAD_supTable6.xlsx", sheet = 4, startRow = 2)
+LS_WW_2 <- LS_WW_2[, c(1,2,7)] %>% 
+  fill(Segment.type) %>%
+  separate(`0.8`, into = c("0.8", "percent"), sep = " ") %>%
+  mutate(class = "class2", dataset = "WW")
+
+LS <- do.call(rbind, list(LS_lasi, LS_WW, LS_lasi_2, LS_WW_2))
+write.table(LS, "summary_dat/hmmix/LASIDAD_supp6.txt", sep = "\t", quote = F, row.names = F)
+```
+

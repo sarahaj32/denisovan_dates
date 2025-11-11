@@ -1,0 +1,592 @@
+---
+title: "Ascertainment of positions for dating"
+output: html_notebook
+root.dir: "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+#rm(list = ls())
+
+library(tidyverse)
+library(glue)
+```
+
+Look at how many ND01 and ND10 positions there are, and within those positions the frequency of EAS and YRI. Lets start with the ND positions first and look at how they are distributed across YRI frequencies. This is from Priya's ND file (big2count)
+
+```{r}
+# these are the positions without genmap problems
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+ND <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/hg19/snp_annotations/ND11_hg19.txt")
+ND2 <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/hg19/snp_annotations/ND11_hg19_masked.bed")
+colnames(ND) <- c("chrom", "pos",  "der", "anc", "Vin", "Den", "YRI_d", "YRI_a", "YRI_fd", "chimp", "class")
+masked <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/hg19/snp_annotations/ND11_hg19_masked.bed")
+colnames(masked) <- c("chrom", "pos")
+masked <- dplyr::select(masked, chrom, pos)
+masked$mask <- T
+ND <- merge(ND, masked, all.x = T, by = c("chrom", "pos"))
+ND$mask <- ifelse(ND$mask, T, F)
+masked <- NULL
+
+ND %>% group_by(class) %>% summarize(n())
+ND %>% group_by(class, mask) %>% summarize(n())
+ND %>% filter(mask, YRI_fd == 0) %>% group_by(class, mask) %>% summarize(n())
+# it's a little weird that they aren't distributed across chromosomes?
+ND %>% filter(mask) %>% group_by(chrom) %>% summarize(n())
+
+ND_chrdist <- ND %>% filter(mask) %>% 
+  ggplot(aes(x = chrom)) +
+  geom_histogram(bins = 22)
+plot(ND_chrdist)
+```
+
+There are multiple positions that are fixed ancestral in YRI, so this should be sufficient for dating. However, lets still explore how many additional positions we could include if we increased the threshold for YRI being ancestral (say to 1 %).
+
+```{r}
+# only focus on masked positions:
+ND <- filter(ND, mask)
+
+ND$YRI_count <- ND$YRI_a + ND$YRI_d
+ND_counts <- ND %>% group_by(class, YRI_fd) %>%
+  summarize(count = n()) %>% 
+  arrange(YRI_fd) %>%
+  ungroup() %>%
+  group_by(class) %>%
+  mutate(cumu = cumsum(count), cumfrac = cumu / max(cumu), frac = count / sum(count))
+
+cumu <- ggplot(ND_counts, aes(x = YRI_fd, y = cumfrac)) + 
+  geom_point() +
+  geom_line() +
+  theme_bw() + 
+  lims(y = c(0,1)) +
+  labs(y = "Fraction of NDxx Positions", x = "YRI Derived Frequency", title = "Cumulative Fraction of NDxx Sites") +
+  facet_wrap(~class)
+plot(cumu)
+
+cumu_count <- ggplot(ND_counts, aes(x = YRI_fd, y = cumu)) + 
+  geom_point() +
+  geom_line() +
+  theme_bw() + 
+  labs(y = "Number of NDxx Positions", x = "YRI Derived Frequency", title = "Cumulative Number of NDxx Sites") +
+  facet_wrap(~class)
+plot(cumu_count)
+
+
+sfs <- ggplot(ND, aes(x = YRI_fd)) + 
+  geom_histogram() +
+  theme_bw() + 
+  labs(y = "Count", x = "YRI Derived Frequency", title = "SFS of NDxx Sites") +
+  facet_wrap(~class)
+plot(sfs)
+
+sfs2 <- ggplot(filter(ND, YRI_fd > 0), aes(x = YRI_fd)) + 
+  geom_histogram(bins = 30) +
+  theme_bw() + 
+  labs(y = "Count", x = "YRI Derived Frequency", title = "SFS of NDxx Sites\nwith YRI derived frequency > 0") +
+  facet_wrap(~class)
+plot(sfs2)
+
+sfs_frac <- ggplot(ND, aes(x = YRI_fd)) + 
+  geom_histogram(aes(y = after_stat(count / sum(count))), bins = 30, boundary = 0) +
+  theme_bw() + 
+  labs(y = "Fraction of NDxx Sites", x = "YRI Derived Frequency", title = "SFS of NDxx Sites") +
+  facet_wrap(~class)
+plot(sfs_frac)
+
+sfs_frac2 <- ggplot(filter(ND_counts, YRI_fd > 0), aes(x = YRI_fd, y = frac)) + 
+  geom_histogram(aes(y = after_stat(count / sum(count))), bins = 30) +
+  theme_bw() + 
+  labs(y = "Fraction of NDxx Sites", x = "YRI Derived Frequency", title = "SFS of NDxx Sites\nwith YRI Derived Frequency > 0") +
+  facet_wrap(~class)
+plot(sfs_frac2)
+```
+
+```{r}
+# save some of the above plots:
+pdf("plots/ascertain/cumulative_NDYRI.pdf", height = 4, width = 8)
+plot(cumu)
+dev.off()
+
+pdf("plots/ascertain/cumulative_NDYRI_count.pdf", height = 4, width = 8)
+plot(cumu_count)
+dev.off()
+
+pdf("plots/ascertain/ND_chromosome_distribution.pdf", height = 4, width = 5)
+plot(ND_chrdist)
+dev.off()
+```
+
+Look at how many of the ND01, ND10, ND11 positions were filled in across the chromosome
+```{r}
+fill <- read.table("data/1000G/ND_VCF_refFill_Masked/summary_counts.out", header = T, sep = ",")
+colnames(fill) <- c("chrom", "after_fill")
+orig <- read.table("data/1000G/ND_VCF/summary_counts.out", header = T, sep = ",")
+fill <- merge(fill, orig, by = "chrom")
+fill$fill <- fill$after_fill - fill$count
+p_fill <- ggplot(fill, aes(x = as.numeric(chrom), fill / after_fill)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Chromosome", y = "fraction of positions filled in\n(not present in 1000G VCF)")
+
+pdf("plots/ascertain/fraction_ND_filledin.pdf", height = 4, width = 5)
+plot(p_fill)
+dev.off()
+
+```
+
+
+also read in a vcf so we can see which positions are and are not found
+
+```{r}
+# these are all of the ND01, ND10, ND11 positions 
+vcf=read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/1000G/ND_VCF/1000G_ND11pos_hg19_chr14.vcf")
+vcf <- dplyr::select(vcf, c(V1,V2,V3,V4,V5,V8))
+colnames(vcf) <- c("chrom", "pos", "id", "ref", "alt", "info")
+vcf$info_clean <- sapply(strsplit(vcf$info, ";"), function(x) {
+  paste0(sub(".*=", "", x), collapse = ";")
+})
+vcf <- separate(vcf, info_clean, sep = ";", into = c("AC", "AF", "AN", "NS", "DP", "EAS_AF", "AMR_AF", "AFR_AF", "EUR_AF", "SAS_AF", "AA", "VT"))
+chr14 <- filter(ND, chrom == "14")
+chr14$chrom <- gsub("chr", "", chr14$chrom)
+
+sum(chr14$pos %in% vcf$pos) / nrow(chr14)
+sum(!chr14$pos %in% vcf$pos) / nrow(chr14)
+
+sum(!vcf$pos %in% chr14$pos)
+chr14 <- merge(chr14, vcf, by = c("chrom", "pos"), all.x = T)
+
+# finally I need to read in the list of positions that pass the mask
+mask <- read.table("/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/hg19/snp_annotations/ND11_hg19_masked.bed")
+colnames(mask) <- c("chrom", "pos", "end")
+mask <- filter(mask, chrom == 14)
+chr14$mask <- chr14$pos %in% mask$pos
+
+# get chromosome 14 total counts for priyas file:
+chr14 %>% group_by(class, mask) %>% summarize(n())
+chr14 %>% filter(YRI_fd == 0) %>% group_by(class, mask) %>% summarize(n())
+
+# how many biallelic positions are in the 1000G vcf, and the mask?
+# (positions in the vcf already passed the mask filter)
+chr14 %>% filter(!is.na(ref)) %>% group_by(class) %>% summarize(n())
+
+# how many of those are fixed ancestral in YRI?
+chr14 %>% filter(!is.na(ref), YRI_fd == 0) %>% group_by(class) %>% summarize(n())
+
+# also do the same as above, to get an idea of how many we are looking for
+chr14 %>% filter(YRI_fd == 0) %>% group_by(class) %>% summarize(n())
+
+# and look for the ND01/10/11 positions that I am not finding in the vcf
+nomatch <- filter(chr14, is.na(ref))
+
+# now look for these positions in the raw vcf - what am I missing?!?!?
+# how many missing aren't in the pilot mask?
+nomatch %>% group_by(class, mask) %>% summarize(n())
+# how many missing have YRI freq == 0
+nomatch %>% filter(YRI_fd == 0, mask) %>% group_by(class) %>% summarize(n())
+
+# save a file of the positions not found in 1000G (including YRI = 0 according to priyas file)
+nomatch %>% filter(mask) %>% dplyr::select(chrom, pos) %>% 
+write.table("testing/ascertainment/chr14_nomatch_1000G.txt", quote = F, row.names = F, col.names = F, sep = "\t")
+
+# look for these positions in the full vcf:
+# bcftools view -T testing/ascertainment/chr14_nomatch /global/scratch/p2p3/pl1_moorjani/SHARED_LAB/DATASETS/hg19/1000G/ALL.chr14.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz > testing/ascertainment/chr14_nomatch.vcf
+# several of them are in the vcf, but they are all biallelic or indels
+
+nomatch_vcf <- read.table("testing/ascertainment/chr14_nomatch.vcf")
+nomatch_vcf  <- dplyr::select(nomatch_vcf , c(V1,V2,V3,V4,V5,V8))
+colnames(nomatch_vcf ) <- c("chrom", "pos", "id", "ref", "alt", "info")
+nomatch_vcf $info_clean <- sapply(strsplit(nomatch_vcf $info, ";"), function(x) {
+  paste0(sub(".*=", "", x), collapse = ";")
+})
+nomatch_vcf  <- separate(nomatch_vcf , info_clean, sep = ";", into = c("AC", "AF", "AN", "NS", "DP", "EAS_AF", "AMR_AF", "AFR_AF", "EUR_AF", "SAS_AF", "AA", "VT"))
+nomatch <- merge(nomatch, nomatch_vcf, by = c("chrom", "pos"), all.x = T)
+
+# all of the positions we found in the raw file are indels
+sum(nchar(nomatch_vcf$alt) == 1 & nchar(nomatch_vcf$ref) == 1)
+indels <- dplyr::select(nomatch_vcf, chrom, pos)
+
+#nomatch %>% filter(YRI_fd > 0, mask, is.na(id.y)) %>% View()
+
+# ok, how many are african singletons?
+nomatch %>% filter(YRI_fd > 0, mask, is.na(id.y), (YRI_a == 2 | YRI_d == 2)) %>% group_by(class) %>% summarize(n())
+
+# how many are fixed derived in africans?
+nomatch %>% filter(YRI_fd > 0, mask, is.na(id.y), (YRI_a != 2 & YRI_d != 2), YRI_fd == 1) %>% group_by(class) %>% summarize(n())
+
+# there are NDxx 96 positions that I can't reconcile at all
+nomatch %>% filter(YRI_fd > 0, mask, is.na(id.y), (YRI_a != 2 & YRI_d != 2), YRI_fd < 1) %>% View()
+
+```
+
+SARAH HERE TOMORROW - is there a mismatchin frequencies???? Is everything reversed and a disaster?????
+```{r}
+chr14[chr14$pos %in% vcf$pos, ] %>% filter(anc == alt) %>% 
+  ggplot(aes(x = YRI_fd, y = AFR_AF)) + geom_point()
+```
+
+Lets see if we can find any of these positions in any other datasets (HGDP lifted over, GA100k, choin)
+
+```{r}
+HGDP_vcf <- read.table("testing/ascertainment/chr14_nomatch_1000G_inHGDP.vcf", skip = 139)
+HGDP_vcf <- dplyr::select(HGDP_vcf, c(V1, V2, V3, V4, V5, V6, V7, V8))
+colnames(HGDP_vcf) <- c("chr", "pos", "id", "ref", "alt", "qual", "filter", "info")
+HGDP_vcf$biallelic <- (nchar(HGDP_vcf$ref) == 1 & nchar(HGDP_vcf$alt) == 1)
+HGDP_vcf$indel_1000G <- HGDP_vcf$pos %in% indels$pos
+
+#reconcile these positions:
+sum(HGDP_vcf$biallelic & HGDP_vcf$indel_1000G)
+HGDP_vcf <- ND %>% filter(chrom == "chr14") %>% merge(HGDP_vcf, by.x = c("chrom", "pos"), by.y = c("chr", "pos"))
+HGDP_vcf$info_clean <- sapply(strsplit(HGDP_vcf $info, ";"), function(x) {
+  paste0(sub(".*=", "", x), collapse = ";")
+})
+
+HGDP_vcf <- separate(HGDP_vcf, info_clean, into = c("nder", "derfrac"), remove = F, sep = ";")
+HGDP_vcf$MAF <- ifelse((HGDP_vcf$biallelic & as.numeric(HGDP_vcf$derfrac) > 0.5), 1 - as.numeric(HGDP_vcf$derfrac), HGDP_vcf$derfrac)
+# ok we really just care about those that were not multiallelic in 1000G (those we have an explanation for)
+HGDP_vcf %>% filter(!indel_1000G) %>% group_by(class, biallelic,) %>% summarize(n())
+HGDP_vcf %>% filter(!indel_1000G, YRI_fd == 0) %>% group_by(class, biallelic,) %>% summarize(n())
+HGDP_vcf %>% filter(!indel_1000G, YRI_fd == 0, biallelic) %>% group_by(class, biallelic, MAF) %>% summarize(n = n())
+HGDP_vcf %>% filter(!indel_1000G, biallelic, YRI_fd == 0) %>%
+ggplot(aes(x = as.numeric(MAF))) +
+  geom_histogram(bins = 100) +
+  theme_bw()
+
+
+```
+
+Repeat with GAsP to see if we find more
+```{r}
+GA_vcf <- read.table("testing/ascertainment/chr14_nomatch_1000G_inGA_annos.vcf")
+#GA_vcf <- read.table("testing/ascertainment/chr14_nomatch_1000G_inGA.vcf")
+
+GA_vcf <- dplyr::select(GA_vcf, c(V1, V2, V3, V4, V5, V6, V7, V8))
+colnames(GA_vcf) <- c("chr", "pos", "id", "ref", "alt", "qual", "filter", "info")
+GA_vcf$biallelic <- (nchar(GA_vcf$ref) == 1 & nchar(GA_vcf$alt) == 1)
+GA_vcf$indel_1000G <- GA_vcf$pos %in% indels$pos
+GA_vcf$inHGDP <- GA_vcf$pos %in% HGDP_vcf$pos 
+#reconcile these positions:
+sum(GA_vcf$biallelic & !GA_vcf$indel_1000G)
+sum(GA_vcf$biallelic & !GA_vcf$indel_1000G & !GA_vcf$inHGDP)
+
+GA_vcf <- ND %>% filter(chrom == "chr14") %>% mutate("chr" = gsub("chr", "", chrom)) %>% merge(GA_vcf, by.x = c("chr", "pos"), by.y = c("chr", "pos"))
+
+GA_vcf$info_clean <- sapply(strsplit(GA_vcf $info, ";"), function(x) {
+  paste0(sub(".*=", "", x), collapse = ";")
+})
+
+GA_vcf <- separate(GA_vcf, info_clean, into = c("nder", "derfrac"), remove = F, sep = ";")
+GA_vcf$MAF <- ifelse((GA_vcf$biallelic & as.numeric(GA_vcf$derfrac) > 0.5), 1 - as.numeric(GA_vcf$derfrac), GA_vcf$derfrac)
+
+# ok we really just care about those that were not multiallelic in 1000G (those we have an explanation for)
+GA_vcf %>% filter(!indel_1000G) %>% group_by(class) %>% summarize(n())
+GA_vcf %>% filter(!indel_1000G) %>% group_by(class, biallelic) %>% summarize(n())
+GA_vcf %>% filter(!indel_1000G, biallelic, !inHGDP) %>% group_by(class) %>% summarize(n())
+GA_vcf %>% filter(!indel_1000G, YRI_fd == 0, biallelic, !inHGDP) %>% group_by(class) %>% summarize(n())
+GA_vcf %>% filter(!indel_1000G, YRI_fd == 0, biallelic) %>% group_by(class, biallelic, MAF) %>% summarize(n = n())
+GA_vcf %>% filter(!indel_1000G, biallelic, YRI_fd == 0) %>%
+ggplot(aes(x = as.numeric(MAF))) +
+  geom_histogram(bins = 100) +
+  theme_bw()
+```
+
+
+We additionally want to stratify by derived frequency in our population of interest - here we'll do EAS. (Input: a vcf with all fixed reference positions filled in by my script). Lets first look at the SFS of the EAS
+
+```{r}
+# now any positions in ND but not EAS should be missing due to the pilot mask 
+EAS_freqs <- data.frame()
+for (chrom in 1:22){
+  print(chrom)
+  tmp <- read.table(paste0("data/1000G/ND_VCF_refFill_Masked/EAS/1000G_EAS_ND11pos_hg19_refFill_chr", chrom, "_freqs.txt"))
+  colnames(tmp) <- c("chrom", "pos", "ref", "alt", "nder", "nall", "alt_freq")
+  tmp$alt_freq <- ifelse(tmp$alt_freq == ".", 0, tmp$alt_freq)
+  tmp$nder <- ifelse(tmp$nder == ".", 0, tmp$nder)
+  print(nrow(tmp))
+  EAS_freqs <- rbind(EAS_freqs, tmp)
+}
+
+EAS_freqs$alt_freq <- as.numeric(EAS_freqs$alt_freq)
+ggplot(EAS_freqs, aes(x = alt_freq)) + 
+  geom_histogram() +
+  theme_bw() + 
+  labs(y = "Number of Positions", x = "EAS Alternative Frequency", title = "SFS of EAS at ND01 or ND10 Sites")
+
+ggplot(filter(EAS_freqs, alt_freq > 0), aes(x = alt_freq)) + 
+  geom_histogram() +
+  theme_bw() + 
+  labs(y = "Fraction of NDxx Sites", x = "EAS Alternative Frequency", title = "SFS of EAS at ND01 or ND10 Sites\nwith Alternative Frequency > 0")
+
+EAS_freqs$folded_freq <- ifelse(EAS_freqs$alt_freq > 0.5, 1 - EAS_freqs$alt_freq, EAS_freqs$alt_freq)
+
+ggplot(filter(EAS_freqs), aes(x = folded_freq)) + 
+  geom_histogram() +
+  theme_bw() + 
+  labs(y = "Fraction of NDxx Sites", x = "EAS Alternative Frequency", title = "Folded SFS of EAS at ND01 or ND10 Sites\nwith Alternative Frequency > 0")
+
+ggplot(filter(EAS_freqs, folded_freq > 0), aes(x = folded_freq)) + 
+  geom_histogram() +
+  theme_bw() + 
+  labs(y = "Fraction of NDxx Sites", x = "EAS Alternative Frequency", title = "Folded SFS of EAS at ND01 or ND10 Sites\nwith Alternative Frequency > 0")
+
+print(filter(EAS_freqs, alt_freq < 1 & alt_freq > 0) %>% nrow())
+```
+
+
+```{r}
+ND10 <- filter(ND, class == "nd10")
+ND10$chrom <- gsub("chr", "", ND10$chrom)
+
+EAS_freqs$alt <- ifelse(EAS_freqs$alt_freq == 0, ".", EAS_freqs$alt)
+comb <- merge(ND10, EAS_freqs, by = c("chrom", "pos"))
+comb$pos <- as.numeric(comb$pos)
+
+```
+
+
+Lets do some quick QC - how many positions have consistent alleles between the datasets?
+
+```{r}
+# see how many of these are not biallelic (the alt/ref and anc/derived are not consistent)
+# how many are consistent with ref = anc?
+print(sum((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == "."))))
+# how many are consistent with ref = alt?
+sum((comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")))
+comb[(comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")), ] %>% head(n = 5)
+nrow(comb) - 234204 - 53356
+# there are 2992 positions where the alleles are not consistent
+638 / nrow(comb)
+
+# this is 0.2% so I'm not too worried, but could be worth investigating:
+comb[!((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")) | (comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == "."))), ] %>% dplyr::select(chrom, pos, der, anc, YRI_d, YRI_a, YRI_fd, ref, alt, alt_freq) %>% head(n = 5)
+
+comb[!((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")) | (comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == "."))), ] %>% group_by(alt_freq) %>% summarize(n())
+
+comb$EAS_der <- ifelse((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")), comb$alt_freq, 
+                       ifelse((comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")), 1 - as.numeric(comb$alt_freq), NA))
+comb <- filter(comb, !is.na(EAS_der))
+# keep the mismatches to check later
+comb_mismatch <- filter(comb, is.na(EAS_der))
+comb$EAS_der <- as.numeric(comb$EAS_der)
+# ok good, when they're merged the numbers are correct
+# any difference is the number lost to the pilot mask
+```
+
+```{r}
+# look at our strictest ascertainment: (ok this is pretty consistent with what I did previously)
+# 20% of variable sites were remove by the strict mask, which would convert to 36513 positions
+# we still have slightly fewer, but I think this is reasonably consistent
+# i had 32,936 previously, but that also included strict filters
+print(glue("strictest ascertainment:", filter(comb, YRI_fd == 0.000 & EAS_der > 0 &  EAS_der < 1) %>% nrow()))
+
+print(glue("YRI fixed ancestral:", filter(comb, YRI_fd == 0.000) %>% nrow()))
+
+print(glue("YRI fixed ancestral and EAS low:", filter(comb, YRI_fd == 0.000, EAS_der <= 0.3) %>% nrow()))
+
+print(glue("YRI der < 0.01:", filter(comb, YRI_fd <= 0.01) %>% nrow()))
+print(glue("YRI der < 0.01 and EAS variable:", filter(comb, YRI_fd <= 0.01 & EAS_der < 1 & EAS_der > 0) %>% nrow()))
+
+print(glue("YRI der < 0.01 & EAS der freq < 0.3:", filter(comb, YRI_fd <= 0.01 & EAS_der < 0.3) %>% nrow()))
+
+print(glue("EAS der freq < 0.3:", filter(comb, EAS_der < 0.3) %>% nrow()))
+
+print(glue("EAS variable:", filter(comb, EAS_der < 1 & EAS_der > 0) %>% nrow()))
+
+```
+
+
+Now that we have our positions do some SFS plotting
+```{r}
+comb$YRI_group <- cut(comb$YRI_fd,
+                breaks = seq(0, 1, by = 0.25),
+                include.lowest = TRUE,
+                right = FALSE,
+                labels = c("0-0.25", "0.25-0.5", "0.5-0.75", "0.75-1"))
+
+plot(ggplot(comb, aes(x = EAS_der)) +
+  geom_histogram(bins = 50) +
+  labs(title = "All Positions", x = "EAS Derived Frequency") +
+  theme_bw()) +
+  facet_wrap(~YRI_group, scales = "free")
+
+# lets try removing singletons
+plot(filter(comb, EAS_der > 0 & EAS_der < 1) %>% 
+  ggplot(aes(x = EAS_der)) +
+    geom_histogram(bins = 50) +
+    labs(title = "Positions Segregating in EAS", x = "EAS Derived Frequency") +
+    theme_bw())
+
+# lets try removing singletons
+plot(filter(comb, EAS_der > 0.0012345) %>% 
+  ggplot(aes(x = EAS_der)) +
+    geom_histogram(bins = 50) +
+    labs(title = "No singleton derived positions in EAS", x = "EAS Derived Frequency") +
+    theme_bw())
+```
+
+I also want to compare this analysis to the ND10 EAS variable positions I found before - see if hg19 really loses that many positions. OK, i'm convinced that these are consistent and I'm not crazy :) Can resume analysis
+
+```{r}
+ND10_var <- read.table("data/1000G/EAS/modern/dating/eig/1000G_snps10_08_allChr_modern_EAS_ND10.snp")
+colnames(ND10_var) <- c("ID", "chrom", "_", "pos", "ref", "alt")
+ND10_var <- dplyr::select(ND10_var, -c(ID, `_`))
+ND10_var$hg38_var <- T
+
+comb_var <- merge(comb, ND10_var, by = c("chrom", "pos", "ref"), all = T)
+comb_var$both_var <- ((comb_var$EAS_der > 0 & comb_var$EAS_der < 1) & comb_var$hg38_var)
+comb_var$both_hom <- ((comb_var$EAS_der == 0 | comb_var$EAS_der == 1) & is.na(comb_var$hg38_var))
+comb_var$alt_problem <- is.na(comb_var$EAS_der)
+comb_var$consistent <- comb_var$both_hom | comb_var$both_var | comb_var$alt_problem
+sum(comb_var$consistent)
+
+```
+
+And repeat with ND01 (the ones we really care about...)
+
+```{r}
+ND01 <- filter(ND, class == "nd01")
+ND01$chrom <- gsub("chr", "", ND01$chrom)
+
+comb <- merge(ND01, EAS_freqs, by = c("chrom", "pos"))
+comb$pos <- as.numeric(comb$pos)
+
+# see how many of these are not biallelic (the alt/ref and anc/derived are not consistent)
+# how many are consistent with ref = anc?
+print(sum((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == "."))))
+# how many are consistent with ref = alt?
+sum((comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")))
+comb[(comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")), ] %>% head(n = 5)
+nrow(comb) - 243271 - 44160
+# there are 983 positions where the alleles are not consistent
+983 / nrow(comb)
+
+# this is 0.3% so I'm still not too worried, but could be worth investigating:
+comb[!((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")) | (comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == "."))), ] %>% dplyr::select(chrom, pos, der, anc, YRI_d, YRI_a, YRI_fd, ref, alt, alt_freq) %>% head(n = 5) %>% View()
+
+
+comb[!((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")) | (comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == "."))), ] %>% group_by(alt_freq) %>% summarize(n())
+
+comb$EAS_der <- ifelse((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")), comb$alt_freq, 
+                       ifelse((comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")), 1 - as.numeric(comb$alt_freq), NA))
+
+comb <- filter(comb, !is.na(EAS_der))
+# keep the mismatches to check later
+comb_mismatch <- filter(comb, is.na(EAS_der))
+comb$EAS_der <- as.numeric(comb$EAS_der)
+# ok good, when they're merged the numbers are correct
+# any difference is the number lost to the pilot mask
+
+```
+
+And again get all the summary statistics
+```{r}
+# look at our strictest ascertainment: (ok this is pretty consistent with what I did previously)
+print(glue("strictest ascertainment:", filter(comb, YRI_fd == 0.000 & EAS_der > 0 &  EAS_der < 1) %>% nrow()))
+
+print(glue("YRI fixed ancestral:", filter(comb, YRI_fd == 0.000) %>% nrow()))
+
+print(glue("YRI fixed ancestral and EAS low:", filter(comb, YRI_fd == 0.000, EAS_der <= 0.3) %>% nrow()))
+
+print(glue("YRI der < 0.01:", filter(comb, YRI_fd <= 0.01) %>% nrow()))
+print(glue("YRI der < 0.01 and EAS variable:", filter(comb, YRI_fd <= 0.01 & EAS_der < 1 & EAS_der > 0) %>% nrow()))
+
+print(glue("YRI der < 0.01 & EAS der freq < 0.3:", filter(comb, YRI_fd <= 0.01 & EAS_der < 0.3) %>% nrow()))
+
+print(glue("EAS der freq < 0.3:", filter(comb, EAS_der < 0.3) %>% nrow()))
+
+print(glue("EAS variable:", filter(comb, EAS_der < 1 & EAS_der > 0) %>% nrow()))
+
+```
+Look at the SFS of ND01 positions in EAS
+```{r}
+ggplot(comb, aes(x = YRI_fd, y = EAS_der)) +
+  geom_point(alpha = 0.2)
+
+comb$YRI_group <- cut(comb$YRI_fd,
+                breaks = seq(0, 1, by = 0.25),
+                include.lowest = TRUE,
+                right = FALSE,
+                labels = c("0-0.25", "0.25-0.5", "0.5-0.75", "0.75-1"))
+
+ggplot(comb, aes(x = EAS_der)) +
+  geom_histogram() +
+  theme_bw() +
+  facet_wrap(~YRI_group, scales = "free")
+
+ggplot(comb, aes(x = folded_freq)) +
+  geom_histogram() +
+  theme_bw() +
+  facet_wrap(~YRI_group, scales = "free")
+
+```
+
+
+```{r}
+# i had 32,936 previously, but that also included strict filters
+print(glue("strictest ascertainment:", filter(comb, YRI_fd == 0.000 & EAS_der > 0 &  EAS_der < 1) %>% nrow()))
+
+print(glue("YRI fixed ancestral:", filter(comb, YRI_fd == 0.000) %>% nrow()))
+
+print(glue("YRI fixed ancestral and EAS low:", filter(comb, YRI_fd == 0.000, EAS_der <= 0.3) %>% nrow()))
+
+print(glue("YRI der < 0.01:", filter(comb, YRI_fd <= 0.01) %>% nrow()))
+print(glue("YRI der < 0.01 and EAS variable:", filter(comb, YRI_fd <= 0.01 & EAS_der < 1 & EAS_der > 0) %>% nrow()))
+
+print(glue("YRI der < 0.01 & EAS der freq < 0.3:", filter(comb, YRI_fd <= 0.01 & EAS_der < 0.3) %>% nrow()))
+
+print(glue("EAS der freq < 0.3:", filter(comb, EAS_der < 0.3) %>% nrow()))
+
+print(glue("EAS variable:", filter(comb, EAS_der < 1 & EAS_der > 0) %>% nrow()))
+
+```
+
+
+```{r}
+
+plot(ggplot(comb, aes(x = YRI_fd)) +
+  geom_histogram(bins = 50) +
+  labs(title = "All ND10 Positions in EAS", x = "YRI Derived Frequency") +
+  theme_bw())
+
+# remove fixed ancestral
+plot(filter(comb, YRI_fd > 0) %>% 
+ggplot(aes(x = YRI_fd)) +
+  geom_histogram(bins = 50) +
+  labs(title = "ND10 Positions in EAS, YRI not fixed ancestral", x = "YRI Derived Frequency") +
+  theme_bw())
+```
+And finally lets combine these
+```{r}
+# remove fixed ancestral
+plot(filter(comb, YRI_fd == 0) %>% 
+ggplot(aes(x = EAS_der)) +
+  geom_histogram(bins = 50) +
+  labs(title = glue("YRI fixed ancestral"), x = "EAS Derived Frequency") +
+  theme_bw())
+
+plot(filter(comb, YRI_fd == 0, EAS_der > 0, EAS_der < 1) %>% 
+ggplot(aes(x = EAS_der)) +
+  geom_histogram(bins = 50) +
+  labs(title = glue("YRI fixed ancestral, segregating in EAS"), x = "EAS Derived Frequency") +
+  theme_bw())
+```
+
+
+Repeat with ND01
+```{r}
+comb <- merge(EAS_freqs, ND01, by = c("chrom", "pos"))
+comb$pos <- as.numeric(comb$pos)
+# see how many of these are not biallelic (the alt/ref and anc/derived are not consistent)
+# how many are consistent with ref = anc?
+print(sum((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == "."))))
+# how many are consistent with ref = alt?
+sum((comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")))
+comb[(comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == ".")), ] %>% head(n = 5)
+nrow(comb) - 239628 - 44069
+# there are 4717 positions where the alleles are not consistent
+4717 / nrow(comb)
+
+# this is ~16% so I'm a bit more worried, worth investigating:
+# additionally, I don't think the polarizing in priyas file is correct...
+comb[!((comb$ref == comb$anc) & ((comb$alt == comb$der) | (comb$alt == ".")) | (comb$ref == comb$der) & ((comb$alt == comb$anc) | (comb$alt == "."))), ] %>% head(n = 5)
+
+```
+

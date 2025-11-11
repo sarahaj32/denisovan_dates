@@ -1,0 +1,106 @@
+---
+title: "EAS SNP counts"
+output: html_notebook
+---
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+rm(list = ls())
+```
+
+Quickly look at how many SNPs of each class are found on average in each type of archaic fragment
+```{r}
+dat <- read.table("data/1000G/EAS/fragments/EAS_fragments_snps10_08_nonoverlapping_full.bed", header = T)
+# 6722 fragments total
+dat$ND01mean <- dat$ND01 / dat$length
+dat$ND10mean <- dat$ND10 / dat$length
+dat$ND11mean <- dat$ND11 / dat$length
+dat %>% group_by(ND_type) %>% summarize(ND10 = mean(ND10mean) * 1000000, ND11 = mean(ND11mean) * 1000000, ND01 = mean(ND01mean) * 1000000)
+
+```
+
+
+```{r}
+EAS_ND01 <- read.table("data/1000G/EAS/modern/dating/eig/1000G_snps10_08_allChr_modern_EAS_ND01.snp")
+
+colnames(EAS_ND01) <- c("ID", "chrom", "_", "pos", "ref", "alt")
+EAS_ND01 <- select(EAS_ND01, -c(ID, `_`))
+ND01 <- read.table("data/hg19/snp_annotations/ND01_hg19_YRIfreq.txt")
+colnames(ND01) <- c("chrom", "pos", "anc", "der", "YRI_der_freq")
+ND01$chrom <- gsub("chr", "", ND01$chrom)
+filter(ND01, YRI_der_freq == 0) %>% nrow()
+```
+Look at the SFS of the ND01 positions
+```{r}
+ggplot(ND01, aes(x = YRI_der_freq)) +
+geom_histogram()
+```
+confirm that this is the same as what I did in bash:
+```{r}
+ND01AfrAnc <- read.table("data/hg19/snp_annotations/ND01AfrAnc_hg19.txt")
+print(nrow(ND01AfrAnc))
+
+EAS_ND01_AfrAnc <- read.table("data/1000G/EAS/modern/dating/eig/1000G_snps10_08_allChr_modern_EAS_ND01AfrAnc.snp")
+colnames(EAS_ND01_AfrAnc) <- c("ID", "chrom", "_", "pos", "ref", "alt")
+EAS_ND01_AfrAnc <- select(EAS_ND01_AfrAnc, -c(ID, `_`))
+print(nrow(EAS_ND01_AfrAnc))
+```
+
+Confirm that the number of AfrAnc I'm using is correct
+```{r}
+combo <- merge(EAS_ND01, ND01, by = c("chrom", "pos"))
+
+filter(combo, YRI_der_freq == 0) %>% nrow()
+
+p <- ggplot(combo, aes(x = YRI_der_freq)) +
+  geom_histogram() +
+  labs(title = "ND01 Positions Segregating within EAS") +
+  theme_bw()
+plot(p)
+
+combo %>% filter(YRI_der_freq <= 0.1) %>%
+  count(YRI_der_freq) %>%
+  arrange(YRI_der_freq) %>% 
+  mutate(num = cumsum(n)) %>%
+  ggplot(aes(x = YRI_der_freq, y = num)) +
+    geom_point() +
+    labs(title = "ND01 Positions Segregating within EAS", y = "Number of Positions") +
+    theme_bw()
+```
+
+Repeat with ND10
+```{r}
+EAS_ND10 <- read.table("data/1000G/EAS/modern/dating/eig/1000G_snps10_08_allChr_modern_EAS_ND10.snp")
+colnames(EAS_ND10) <- c("ID", "chrom", "_", "pos", "ref", "alt")
+EAS_ND10 <- dplyr::select(EAS_ND10, -c(ID, `_`))
+ND10 <- read.table("data/hg19/snp_annotations/ND10_hg19_YRIfreq.txt")
+colnames(ND10) <- c("chrom", "pos", "anc", "der", "YRI_der_freq")
+ND10$chrom <- gsub("chr", "", ND10$chrom)
+filter(ND10, YRI_der_freq == 0) %>% nrow()
+```
+
+```{r}
+combo <- merge(EAS_ND10, ND10, by = c("chrom", "pos"))
+
+filter(combo, YRI_der_freq == 0) %>% nrow()
+
+p <- ggplot(combo, aes(x = YRI_der_freq)) +
+  geom_histogram() +
+  labs(title = "ND10 Positions Segregating within EAS") +
+  theme_bw()
+plot(p)
+
+combo %>% filter(YRI_der_freq <= 0.1) %>%
+  count(YRI_der_freq) %>%
+  arrange(YRI_der_freq) %>% 
+  mutate(num = cumsum(n)) %>%
+  ggplot(aes(x = YRI_der_freq, y = num)) +
+    geom_point() +
+    labs(title = "ND10 Positions Segregating within EAS", y = "Number of Positions") +
+    theme_bw()
+```
+

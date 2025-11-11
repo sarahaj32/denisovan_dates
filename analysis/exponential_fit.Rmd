@@ -1,0 +1,108 @@
+---
+title: "fit_exponential"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Goal: fit an exponential to the LD decay curve and infer Tadmix
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(tidyverse)
+```
+
+Read in the LD data. For testing we'll just use a random ND10 one
+```{r}
+# read in the results from computed
+ld_dat <- read.table("testing/CHB/ND10/computed/CHB_ND10_results.out")
+colnames(ld_dat) <- c("distance", "D", "D_1", "D_2", "D_3",  "count")
+
+# filter to a minimum threshold
+ld_dat <- filter(ld_dat, distance >= 0.02)
+# fit exponential, start with default starting points for A and m
+model_exp <- nls(D ~ A * exp(-m * distance/100), data = ld_dat)
+
+inf_A <- coef(model_exp)[1]
+inf_m <- coef(model_exp)[2]
+```
+
+Also try using Priyas method where she first searches for starting parameters then refines using nls:
+This method is here: https://github.com/MoorjaniLab/rolloff/blob/1cb5f8041bf2ea6fcbcfba8743d82a7c4294f431/Rcode/rexpfit.r#L11
+```{r}
+
+# Pick optimized parameters for model 1: A*exp(m1 * -x) + C
+dist <- ld_dat[,1]		# updated x values
+wcorr <- ld_dat[,2]		# updated y values
+
+fm1 <- function(x) x[1]*exp(-x[2] * dist/100)
+fm2 <- function(x) sum((wcorr-fm1(x))^2)
+fm3 <- DEoptim(fm2, lower=rep(0.00001,2), upper=c(10, 500), control=list(trace=FALSE))
+par1 <- fm3$optim$bestmem
+
+# parameters for y ~ Ae-mt
+names(par1) <- c("A", "m")
+
+# fit the model of Single exponential
+fit1 <- nls(wcorr ~ (A*exp(-m * dist/100)), start=par1, control=list(maxiter=1000, warnOnly=TRUE))
+	
+#estimated parameters
+xco <- coef(fit1)[1]
+xexp <- coef(fit1)[2]  	# rate of decay of exponential
+
+```
+
+For this one example, we don't get any difference across methods, wahoo!
+```{r}
+print(inf_m)
+print(xexp)
+```
+
+
+Now I'll plot, using the exponential values I found
+```{r}
+ld_dat$fit <- inf_A * exp(-inf_m * ld_dat$distance / 100) 
+ggplot(ld_dat, aes(x = distance, y = D)) +
+  geom_point() +
+  theme_bw() + 
+  geom_line(aes(x = distance, y = fit), color = "red")
+```
+
+Now I want to write a function that combines the results of compute-d on separate chromosomes. This way I can jacknife and all sorts of fun stuff, AND don't have to wait for computed to run on the full genome
+```{r}
+path <- "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating/data/1000G/EAS/modernMyAsc/dating/computed/"
+LD_dat <- data.frame()
+for (chr in 1:22){
+  dat <- read.table(paste0(path, "1000G_modernMyAsc_EAS_ND01_chr", chr, "_results.out"))
+  colnames(dat) <- c("distance", "D", "D_1", "D_2", "D_3",  "count")
+  dat <- dplyr::select(dat, distance, D, count)
+  dat$chr <- chr
+  LD_dat <- rbind(LD_dat, dat)
+}
+
+# filter to a minimum threshold
+LD_dat <- filter(LD_dat, distance >= 0.02)
+sumz <- mutate(LD_dat, "weight" = D * count) %>% 
+  group_by(distance) %>% 
+  filter(!is.na(D)) %>%
+  summarize("weighted_D" = sum(weight) / sum(count), "count" = sum(count), chrs = paste(chr, collapse = ",")) 
+# fit exponential, start with default starting points for A and m
+model_exp <- nls(weighted_D ~ A * exp(-m * distance/100), data = sumz)
+
+inf_A <- coef(model_exp)[1]
+
+inf_m <- coef(model_exp)[2]
+print(inf_m * 29)
+
+sumz$fit <- inf_A * exp(-inf_m * sumz$distance / 100) 
+ggplot(sumz, aes(x = distance, y = weighted_D)) +
+  geom_point() +
+  theme_bw() + 
+  geom_line(aes(x = distance, y = fit), color = "red")
+sumz %>% mutate("weighted_D" = round(weighted_D, 7), "D1" = weighted_D, "D2" = weighted_D, "D3" = weighted_D) %>%
+  dplyr::select(distance, weighted_D, D1, D2, D3, count) %>% 
+  write.table(paste0(path, "/consolidated_D.out"), quote = F, row.names = F, sep = "\t", col.names = F)
+```
+

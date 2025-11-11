@@ -1,0 +1,121 @@
+---
+title: "plot_cumulative"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(tidyverse)
+
+# set plotting settings and variables
+theme_set(theme_bw() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)))
+```
+
+
+```{r}
+###
+
+cum <- data.frame()
+for(pop in c("choin-OCE", "choin-Agta", "choin-OCESEA", "all-PAP", "HGDP-PAP", "GAv1-Aeta", "all-Aeta", "GAv1-Indonesia", "GAv1-Philippines", "GAv1-SEA", "allInds_choin")){
+  print(pop)
+  tmp <- read.table(paste0("data/cumulative/", pop, "_cumulative_Denisova_fragments_08_annotated.txt"), header = T)
+  tmp$pop <- pop
+  cum <- rbind(cum, tmp)
+}
+
+all <- ggplot(cum, aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line()
+plot(all)
+
+aeta <- cum %>% filter(pop %in% c("all-Aeta", "choin-Agta", "GAv1-Aeta")) %>%
+  ggplot(aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line() +
+  geom_point(size = 0.1)
+plot(aeta)
+
+pap <- cum %>% filter(pop %in% c("all-PAP", "HGDP-PAP", "choin-OCE")) %>%
+  ggplot(aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line() +
+  geom_point(size = 0.1)
+plot(pap)
+
+
+GAv1 <- cum %>% filter(pop %in% c("GAv1-Indonesia", "GAv1-Philippines", "GAv1-SEA")) %>% 
+    ggplot(aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line() +
+  geom_point(size = 0.1)
+plot(GAv1)
+```
+
+Also look at bigger, combined populations:
+Here, East Asia contains NEA from GAv1 and EAS from 1000G
+SAS contains LASIDAD, 1000G SAS, and GAv1 SAS
+```{r}
+
+groups <- cum %>% filter(pop %in% c("EAS", "SAS")) %>%
+  ggplot(aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line() +
+  geom_point(size = 0.1)
+plot(groups)
+```
+
+```{r}
+cols = c("#E69F00", "#925E9F", "#0072B2", "#009E73", "#E69F00")
+
+cum <- data.frame()
+for(pop in c("all-PAP", "all-Aeta", "SAS", "EAS", "SEA_Agta")){ # , "SEA", "choin-OCESEA"
+  print(pop)
+  tmp <- read.table(paste0("data/cumulative/", pop, "_cumulative_Denisova_fragments_08_annotated.txt"), header = T)
+  tmp$pop <- pop
+  cum <- rbind(cum, tmp)
+}
+
+cum <- cum %>% group_by(pop) %>% mutate("ind_frac" = ind / max(ind))
+all <- ggplot(cum, aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = cols, guide = "none") +
+  labs(y = "Amount Reconstructed (Gb)", x = "Number of Individuals", title = "Reconstructed Denisovan Genome") +
+  lims(y = c(0, 1)) +
+  theme(axis.text.x = element_text(angle = 0))
+#plot(all)
+
+pdf("plots/MCB_poster_cumulative.pdf", height = 4, width = 7)
+plot(all)
+dev.off()
+
+cols = c( "#925E9F", "#0072B2", "#009E73", "#E69F00")
+
+all <- ggplot(filter(cum, pop != "all-Aeta"), aes(x = ind_frac, y = amount / 1000000000, color = pop)) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = cols, guide = "none") +
+  labs(y = "Amount Reconstructed (Gb)", x = "Proportion of Individuals Included", title = "Reconstructed Denisovan Genome") +
+  lims(y = c(0, 1.2)) +
+  theme(axis.text.x = element_text(angle = 0), legend.position="none")
+plot(all)
+
+pdf("plots/CCB_talk_cumulative_frac.pdf", height = 4, width = 5)
+plot(all)
+dev.off()
+
+aeta <- cum %>% filter(pop %in% c("all-Aeta", "choin-Agta", "GAv1-Aeta")) %>%
+  ggplot(aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line() +
+  geom_point(size = 0.1)
+plot(aeta)
+
+pap <- cum %>% filter(pop %in% c("all-PAP", "HGDP-PAP", "choin-OCE")) %>%
+  ggplot(aes(x = ind, y = amount / 1000000000, color = pop)) +
+  geom_line() +
+  geom_point(size = 0.1)
+plot(pap)
+
+
+```
+

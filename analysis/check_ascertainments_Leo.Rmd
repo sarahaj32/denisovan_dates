@@ -1,0 +1,42 @@
+---
+title: "check_ascertainments_Leo"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+# set plotting settings and variables
+theme_set(theme_bw() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+            theme(axis.text = element_text(size = 10)))
+
+library(tidyverse)
+
+```
+
+```{r}
+for(chrom in 1:22){
+  print(chrom)
+  YRI <- read.table(paste0("data/Leo_ND/YRI_chr", chrom, "_freqs.txt"))
+  colnames(YRI) <- c("chrom", "pos", "ref", "alt", "n_der_YRI", "nalleles", "YRI_freq")
+  ND <- read.table(paste0("data/Leo_ND/Leo_NDxx_chr", chrom, ".txt"), header = T)
+  output <- paste0("data/Leo_ND/Leo_ND11_AfrFreqs_chr", chrom, ".txt")
+  comb = merge(YRI, ND, by = c("chrom", "pos"), sort = FALSE)
+  rm(ND)
+  rm(YRI)
+  
+  comb$YRI_der_freq <- ifelse(comb$ref == comb$anc, comb$YRI_freq,
+                              ifelse(comb$ref == comb$der, 1-comb$YRI_freq, NA))
+  
+  comb %>% filter(class != "nd00") %>% dplyr::select(chrom, pos, der, anc, n_der_den, n_der_nea, chimp, class, YRI_der_freq) %>% write.table(output, quote = F, row.names = F, sep = "\t")
+  print("done")
+}
+
+  
+```
+

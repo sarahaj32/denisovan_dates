@@ -1,0 +1,682 @@
+---
+title: "Neanderthal Performance"
+author: "Sarah Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Analyze hmmix accuracy when inferring both Denisovan and Neanderthal gene flow
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(tidyverse)
+library(data.table)
+
+# set plotting settings and variables
+theme_set(theme_bw() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+            theme(axis.text = element_text(size = 10)))
+
+
+
+# a helper function that expands the bedfile to a label for every 1000 bp
+expand_rows <- function(start, end){
+  # find the start and end, rounded to 1000
+  # go by the majority
+  start_1000 <- start - start %% 1000
+  end_1000 <- end + (1000 - (end %% 1000))
+  # a fix for the hmm
+  end_1000 <- ifelse(end_1000 == start_1000, end_1000 + 1000, end_1000)
+  
+  pos_seq <- seq(from = start_1000, to = end_1000 - 1000, by = 1000)
+  
+  return(data.table(pos = pos_seq, pos2 = pos_seq + 1000))
+}
+```
+
+
+Lets look carefully at the overlap between our inferred fragments and true fragments
+```{r}
+# read in the true ancestry for a chromosome
+frag_dat <- data.frame()
+for (sim in c("Neanderthal_simple")){ 
+  print(sim)
+  for (rep in c("_1", "_2", "_3")){ # 
+    print(rep)
+    for (arch in c("DEN", "NEA")){
+      sim_frag_dat <- data.frame()
+      for (i in 1:20){
+        tmp_dat <- read.table(paste0("simdat/denisovan", sim, rep, "/", arch, "/fragments/denisovan", sim, "_sim_intro_", i, ".bed"))
+        colnames(tmp_dat) <- c("hap", "chrom", "start", "end")
+        tmp_dat$chrom <- paste0("chr", i)
+        sim_frag_dat <- rbind(sim_frag_dat, tmp_dat)
+      }
+      sim_frag_dat$length <- sim_frag_dat$end - sim_frag_dat $start
+      # calculate total for each chromosome and plot
+      frag_sums <- sim_frag_dat %>% group_by(hap) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000)
+      frag_sums$frac <- frag_sums$archaic / 2.5e9
+      
+      p <- ggplot(frag_sums, aes(x = hap, y = frac * 100)) +
+        geom_bar(stat = "identity") + 
+        labs(x = "haplotype", y = "Percentage Denisovan Ancestry", title = paste(sim, rep, arch, collapse = ": ")) +
+        geom_hline(yintercept = 5, color = "red", linetype = "dashed")
+      plot(p)
+      
+      sim_frag_dat$sim <- sim
+      sim_frag_dat$rep <- rep
+      sim_frag_dat$label <- arch
+      frag_dat <- rbind(frag_dat, sim_frag_dat)
+    }
+  }
+}
+
+# add on the individual name
+frag_dat <- frag_dat %>%  group_by(chrom, sim, rep, label) %>%
+  mutate(id = cumsum(hap != lag(hap, default=first(hap)))) %>%
+  mutate(id = paste0("NAMH_", ((id) %/% 2) + 1))  %>%
+  ungroup()
+
+# plot the differences in amount recovered across each repetition
+# here each point is an individual
+p_intro_sum <- frag_dat %>% group_by(hap, sim, rep, label) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  filter(rep != "") %>%
+  ggplot(aes(x = label, y = frac * 100, color = as.character(gsub("_", "", rep)))) +
+  labs(title = "Introgressed Archaic Ancestry", x = "Archaic Ancestry", y = "Archaic Ancestry Percentage", color = "Repetition") +
+  lims(y = c(0, 5.5)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 5, color = "red", linetype = "dashed")
+plot(p_intro_sum)
+
+p_intro_arch_sum <- frag_dat %>% group_by(hap, sim, rep) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  filter(rep != "") %>%
+  ggplot(aes(x = rep, y = frac * 100, color = as.character(gsub("_", "", rep)))) +
+  labs(title = "Introgressed Archaic Ancestry", x = "Repetition", y = "Archaic Ancestry Percentage", color = "Repetition") +
+  geom_boxplot() +
+  lims(y = c(0, 10.5)) +
+  geom_hline(yintercept = 10, color = "red", linetype = "dashed")
+plot(p_intro_arch_sum)
+
+pdf("plots/NeaDen_sims/true_ancestry_all.pdf", height = 3, width = 3)
+plot(p_intro_arch_sum)
+dev.off()
+
+pdf("plots/NeaDen_sims/true_ancestry_split.pdf", height = 3, width = 5)
+plot(p_intro_sum)
+dev.off()
+
+
+```
+
+Look at what an example individual looks like (make sure everything seems reasonable)
+```{r}
+p_ex <- frag_dat %>% filter(chrom == "chr3", id == "NAMH_5", rep == "_1", start > 10000000, start < 20151850) %>%
+  ggplot(aes(y = as.character(hap), color = label)) +
+  geom_segment(aes(x = start, xend = end, yend = as.character(hap)), linewidth = 7)
+plot(p_ex)
+
+```
+
+Compare fragment lengths between the populations, to make sure we can distinguish as expected
+```{r}
+p_intro_len <- frag_dat %>% group_by(hap, sim, rep, label) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  filter(rep != "") %>%
+  ggplot(aes(x = label, y = mean_length, color = as.character(gsub("_", "", rep)))) +
+  labs(title = "Introgressed Fragment Length (Kb)\nTrue", x = "Simulation", y = "Mean Length", color = "Repetition") +
+  geom_boxplot()
+plot(p_intro_len)
+
+
+pdf("plots/NeaDen_sims/archaic_frag_lengths.pdf", height = 4, width = 5)
+plot(p_intro_len)
+dev.off()
+```
+
+
+Next, read in the inferred archaic fragments for each simulation and see how these results compare
+```{r}
+inf_dat <- data.frame()
+for (sim in c("Neanderthal_simple")){ # , "early", "late", "low" "early", 
+  print(sim)
+  for (rep in c("_1", "_2", "_3")){
+  print(rep)
+    sim_inf_dat <- data.frame()
+    for (i in 1:20){
+       tmp_dat <- read.table(paste0("simdat/denisovan", sim, rep, "/archaic_0.8/fragments_anno/denisovan", sim, "_hmmix.200_annotated_", i, ".bed"), header = T)
+      colnames(tmp_dat)[colnames(tmp_dat) == "hapID"] <- "hap"
+      tmp_dat$chrom <- paste0("chr", i)
+      sim_inf_dat <- rbind(sim_inf_dat, tmp_dat)
+    }
+    
+    # calculate total for each chromosome and plot
+    inf_sums <- sim_inf_dat %>% group_by(hap) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000)
+    inf_sums$frac <- inf_sums$archaic / 2.5e9
+    
+    p <- ggplot(inf_sums, aes(x = hap, y = frac * 100)) +
+      geom_bar(stat = "identity") + 
+      labs(x = "haplotype", y = "Inferred Percentage Archaic Ancestry", title = paste0("Inferred Archaic Ancestry (pp0.8): ", rep)) +
+      geom_hline(yintercept = 10, color = "red", linetype = "dashed")
+    plot(p)
+    
+    sim_inf_dat$sim <- sim
+    sim_inf_dat$rep <- rep
+    colnames(sim_inf_dat)[colnames(sim_inf_dat) == "haplotype"] <- "id"
+    inf_dat <- rbind(inf_dat, sim_inf_dat)
+  }
+}
+
+
+p_inf_sum <- inf_dat %>% group_by(hap, sim, rep) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  ggplot(aes(x = rep, y = frac * 100, color = as.character(gsub("_", "", rep)))) +
+    labs(title = "Inferred Archaic Ancestry\n(pp = 0.8)", x = "Simulation", y = "Inferred Archaic Ancestry Percentage", color = "Repetition") +
+  geom_boxplot() +
+  lims(y = c(0, 10.5)) +
+  geom_hline(yintercept = 10, color = "red", linetype = "dashed")
+plot(p_inf_sum)
+
+pdf("plots/NeaDen_sims/inferred_ancestry_all.pdf", height = 3, width = 3)
+plot(p_inf_sum)
+dev.off()
+
+```
+
+
+
+
+```{r}
+p_ex <- inf_dat %>% filter(chrom == "chr3", id == "NAMH_5", rep == "_1", start > 10000000, start < 20151850) %>%
+  ggplot(aes(y = as.character(hap))) +
+  labs(title = "Inferred Archaic Ancestry") +
+  geom_segment(aes(x = start, xend = end, yend = as.character(hap)), linewidth = 7)
+plot(p_ex)
+
+```
+
+Read in Most likely results
+```{r}
+inf_ML_dat <- data.frame()
+for (sim in c("Neanderthal_simple")){ # , "early", "late", "low" "early", 
+  print(sim)
+  for (rep in c("_1", "_2", "_3")){
+  print(rep)
+    for (arch in c("DEN", "NEA")){
+      sim_inf_ML_dat <- data.frame()
+      for (i in 1:20){
+         tmp_dat <- read.table(paste0("simdat/denisovan", sim, rep, "/", arch, "/fragments/denisovan", sim, "_hmmix.200_mostLikely_", i, ".bed"), header = T)
+        colnames(tmp_dat)[colnames(tmp_dat) == "hapID"] <- "hap"
+        tmp_dat$chrom <- paste0("chr", i)
+        sim_inf_ML_dat <- rbind(sim_inf_ML_dat, tmp_dat)
+      }
+      
+      # calculate total for each chromosome and plot
+      inf_ML_sums <- sim_inf_ML_dat %>% group_by(hap) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000)
+      inf_ML_sums$frac <- inf_ML_sums$archaic / 2.5e9
+      
+      p <- ggplot(inf_ML_sums, aes(x = hap, y = frac * 100)) +
+        geom_bar(stat = "identity") + 
+        labs(x = "haplotype", y = "Inferred Percentage Denisovan Ancestry", title = paste0("Most Likely Class: ", rep," no filter")) +
+        geom_hline(yintercept = 5, color = "red", linetype = "dashed")
+      plot(p)
+      
+      sim_inf_ML_dat$sim <- sim
+      sim_inf_ML_dat$rep <- rep
+      sim_inf_ML_dat$label <- arch
+      colnames(sim_inf_ML_dat)[colnames(sim_inf_ML_dat) == "haplotype"] <- "id"
+      inf_ML_dat <- rbind(inf_ML_dat, sim_inf_ML_dat)
+    }
+  }
+}
+
+p_inf_ML_sum <- inf_ML_dat %>% group_by(hap, sim, rep, label) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  ggplot(aes(x = label, y = frac * 100, color = as.character(gsub("_", "", rep)))) +
+    labs(title = "Inferred Archaic Ancestry (pp = 0.8)\nMost Likely Classification", x = "Simulation", y = "Inferred Archaic Ancestry Percentage", color = "Repetition") +
+  geom_boxplot() +
+  lims(y = c(0, 5.5)) +
+  geom_hline(yintercept = 5, color = "red", linetype = "dashed")
+plot(p_inf_ML_sum)
+
+pdf("plots/NeaDen_sims/inferred_ancestry_MLsplit.pdf", height = 3, width = 5)
+plot(p_inf_ML_sum)
+dev.off()
+
+p_ML_len <- inf_ML_dat %>% group_by(hap, sim, rep, label) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  filter(rep != "") %>%
+  ggplot(aes(x = label, y = mean_length, color = as.character(gsub("_", "", rep)))) +
+  labs(title = "Introgressed Fragment Length (Kb)\nMost Likely Classification", x = "Simulation", y = "Mean Length", color = "Repetition") +
+  geom_boxplot()
+plot(p_ML_len)
+
+```
+
+finally read in all the data and repeat the analysis for fragments filtered by ND01/10
+```{r}
+inf_ND_dat <- data.frame()
+for (sim in c("Neanderthal_simple")){ # , "early", "late", "low" "early", 
+  print(sim)
+  for (rep in c("_1", "_2", "_3")){
+  print(rep)
+    for (arch in c("DEN", "NEA")){
+      sim_inf_ND_dat <- data.frame()
+      for (i in 1:20){
+         tmp_dat <- read.table(paste0("simdat/denisovan", sim, rep, "/", arch, "/fragments/denisovan", sim, "_hmmix.200_ND_", i, ".bed"), header = T)
+        colnames(tmp_dat)[colnames(tmp_dat) == "hapID"] <- "hap"
+        tmp_dat$chrom <- paste0("chr", i)
+        sim_inf_ND_dat <- rbind(sim_inf_ND_dat, tmp_dat)
+      }
+      
+      # calculate total for each chromosome and plot
+      inf_ND_sums <- sim_inf_ND_dat %>% group_by(hap) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000)
+      inf_ND_sums$frac <- inf_sums$archaic / 2.5e9
+      
+      p <- ggplot(inf_ND_sums, aes(x = hap, y = frac * 100)) +
+        geom_bar(stat = "identity") + 
+        labs(x = "haplotype", y = "Inferred Percentage Denisovan Ancestry", title = paste0("ND class : ", rep," no filter")) +
+        geom_hline(yintercept = 5, color = "red", linetype = "dashed")
+      plot(p)
+      
+      sim_inf_ND_dat$sim <- sim
+      sim_inf_ND_dat$rep <- rep
+      sim_inf_ND_dat$label <- arch
+      colnames(sim_inf_ND_dat)[colnames(sim_inf_ND_dat) == "haplotype"] <- "id"
+
+      inf_ND_dat <- rbind(inf_ND_dat, sim_inf_ND_dat)
+    }
+  }
+}
+
+p_inf_sum <-inf_ND_dat %>% group_by(hap, sim, rep, label) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  ggplot(aes(x = label, y = frac * 100, color = as.character(gsub("_", "", rep)))) +
+    labs(title = "Inferred Archaic Ancestry (pp = 0.8)\nND Class", x = "Simulation", y = "Inferred Archaic Ancestry Percentage", color = "Repetition") +
+  geom_boxplot() +
+  lims(y = c(0, 5.5)) +
+  geom_hline(yintercept = 5, color = "red", linetype = "dashed")
+
+
+plot(p_inf_sum)
+
+pdf("plots/NeaDen_sims/inferred_ancestry_NDsplit.pdf", height = 3, width = 5)
+plot(p_inf_sum)
+dev.off()
+
+```
+
+And Length
+```{r}
+p_intro_len <- inf_ND_dat %>% group_by(hap, sim, rep, label) %>% summarize(archaic = sum(length), mean_length = mean(length) / 1000, med_length = median(length) / 1000, frac = archaic / 2.5e9) %>%
+  ungroup() %>%
+  filter(rep != "") %>%
+  ggplot(aes(x = label, y = mean_length, color = as.character(gsub("_", "", rep)))) +
+  labs(title = "Introgressed Fragment Length (Kb)\nND Classification", x = "Simulation", y = "Mean Length", color = "Repetition") +
+  geom_boxplot()
+plot(p_intro_len)
+```
+Example to make sure everything is looking reasonable
+```{r}
+p_ex <- inf_ND_dat %>% filter(chrom == "chr3", id == "NAMH_5", rep == "_1", start > 10000000, start < 20151850) %>%
+  ggplot(aes(y = as.character(hap), color = label)) +
+  geom_segment(aes(x = start, xend = end, yend = as.character(hap)), linewidth = 7)
+plot(p_ex)
+
+```
+
+
+```{r, include=FALSE ,eval = FALSE}
+# This takes a while, so now is executed as a slurm script with the results written out, then can be read in in the next cell
+# compare the inferred to the truth
+results <- data.frame()
+for (tmp_ind in unique(inf_dat$id)){
+  print(tmp_ind)
+  # filter data to individual
+  tmp_inf <- filter(inf_dat, id == tmp_ind)
+  tmp_ML <- filter(inf_ML_dat, id == tmp_ind)
+  tmp_frags <- filter(frag_dat, id == tmp_ind)
+  tmp_ND <- filter(inf_ND_dat, id == tmp_ind)
+  # rename the two haplotypes to "0" and "1"
+  tmp_inf <- group_by(tmp_inf, chrom) %>% mutate(hap = dense_rank(hap) - 1)
+  tmp_ML <- group_by(tmp_ML, chrom) %>% mutate(hap = dense_rank(hap) - 1)
+  tmp_frags <- group_by(tmp_frags, chrom) %>% mutate(hap = dense_rank(hap) - 1)
+  tmp_ND <- group_by(tmp_ND, chrom) %>% mutate(hap = dense_rank(hap) - 1)
+  
+  for (tmp_sim in c("Neanderthal_simple")){
+    print(tmp_sim)
+    for (tmp_hap in c(0, 1)){
+      print(tmp_hap)
+      for (tmp_rep in c("_1", "_2", "_3")){
+        hap_inf <- filter(tmp_inf, hap == tmp_hap, rep == tmp_rep, sim == tmp_sim)
+        hap_frags <- filter(tmp_frags, hap == tmp_hap, rep == tmp_rep, sim == tmp_sim)
+        hap_ND <- filter(tmp_ND, hap == tmp_hap, rep == tmp_rep, sim == tmp_sim)
+        hap_ML <- filter(tmp_ML, hap == tmp_hap, rep == tmp_rep, sim == tmp_sim)
+        # rename the classification titles so we can merge together
+        hap_ML <- rename(hap_ML, "ML_label" = label, "inferred_ML_length" = length) %>%
+          select(hap, chrom, start, end, inferred_ML_length, ML_label)
+        hap_ND <- rename(hap_ND, "ND_label" = label, "inferred_ND_length" = length) %>%
+          select(hap, chrom, start, end, inferred_ND_length, ND_label)
+
+        expanded <- setDT(hap_inf)[, expand_rows(start, end), by = .(start, end)]
+        expanded <- merge(expanded, hap_inf, by = c("start", "end"))  %>% dplyr::select(-c(start, end))
+        expanded_ML <- setDT(hap_ML)[, expand_rows(start, end), by = .(start, end)]
+        expanded_ML <- merge(expanded_ML, hap_ML, by = c("start", "end"))  %>% dplyr::select(-c(start, end))
+        expanded_ND <- setDT(hap_ND)[, expand_rows(start, end), by = .(start, end)]
+        expanded_ND <- merge(expanded_ND, hap_ND, by = c("start", "end"))  %>% dplyr::select(-c(start, end))
+        expanded <- merge(expanded, expanded_ML, by = c("hap", "pos", "pos2", "chrom"), all.x = T) %>%
+          mutate(ML_label = ifelse(is.na(ML_label), "unclassified", ML_label)) %>%
+          rename("inferred_length" = length)
+        
+        expanded <- merge(expanded, expanded_ND, by = c("hap", "pos", "pos2", "chrom"), all.x = T) %>%
+          mutate(ND_label = ifelse(is.na(ND_label) & ((ND01 + ND10) > 0), "mosaic", ND_label))
+        
+        expanded_true <- setDT(hap_frags)[, expand_rows(start, end), by = .(start, end)]
+        expanded_true <- merge(expanded_true, hap_frags, by = c("start", "end")) %>% dplyr::select(-c(start, end, sim, rep)) %>%
+          rename("true_label" = label)
+
+        
+        combo <- merge(expanded, expanded_true, all = T, by = c("pos", "pos2", "hap", "chrom", "id")) %>%
+          mutate(arch_perf = ifelse(!is.na(state) & !is.na(true_label), "TP", 
+                                ifelse(is.na(state) & !is.na(true_label), "FN", 
+                                       ifelse(!is.na(state) & is.na(true_label), "FP", "Other")))) %>%
+          mutate(ML_perf = ifelse(is.na(ML_label), "unclassified",
+                   ifelse(ML_label == true_label, "TP", 
+                                ifelse(ML_label == "unclassified", "unclassified", 
+                                       ifelse(!is.na(ML_label) & !is.na(true_label) & (ML_label != true_label), "missclassified", "other"))))) %>%
+          mutate(ND_perf = ifelse(is.na(ND_label), "unclassified", 
+                              ifelse(ND_label == true_label, "TP", 
+                                  ifelse(ND_label == "mosaic", "mosaic",
+                                    ifelse(!is.na(ND_label) & !is.na(true_label) & (ND_label != true_label), "missclassified", "other")))))
+        
+        combo[is.na(combo)] <- ""
+        combo %>% write.table(paste0("analysis/hmmix_comps/", tmp_sim, tmp_rep, "_", tmp_ind, "_", tmp_hap), quote = F, row.names = F, sep = "\t")
+        tmp_results <- combo %>% group_by(arch_perf, ML_perf, ND_perf) %>% summarize("kb_blocks" = n())
+        tmp_results$ind <- tmp_ind
+        tmp_results$hap <- tmp_hap
+        tmp_results$rep <- tmp_rep
+        tmp_results$sim <- tmp_sim
+        results <- rbind(results, tmp_results)
+      }
+    }
+  }
+}
+
+```
+
+```{r}
+# concatenate results
+results <- data.frame()
+for (tmp_sim in c("Neanderthal_simple")){
+  print(tmp_sim)
+  for (tmp_ind in unique(inf_dat$id)){
+    for (tmp_hap in c(0, 1)){ # , 1
+      print(tmp_hap)
+      for (tmp_rep in c("_1", "_2", "_3")){ # , "_2", "_3"
+        combo <- read.table(paste0("analysis/hmmix_comps/", tmp_sim, tmp_rep, "_", tmp_ind, "_", tmp_hap), header = T, fill = NA, sep = "\t")
+        tmp_results <- combo %>% group_by(arch_perf, ML_perf, ND_perf) %>% summarize("kb_blocks" = n())
+        tmp_results$ind <- tmp_ind
+        tmp_results$hap <- tmp_hap
+        tmp_results$rep <- tmp_rep
+        tmp_results$sim <- tmp_sim
+        results <- rbind(results, tmp_results)
+      }
+    }
+  }
+  write.table(results, paste0("analysis/hmmix_comps/", tmp_sim, "_performanceResults.txt"), sep = "\t", quote = F, row.names = F)
+}
+
+tmp_sim <- "Neanderthal_simple"
+results <- read.table(paste0("analysis/hmmix_comps/", tmp_sim, "_performanceResults.txt"), sep = '\t', header = T)
+# performance on just archaic classification:
+results <- ungroup(results)
+results_arch <- results %>% select(-c(ML_perf, ND_perf)) %>% group_by(arch_perf, ind, hap, rep, sim) %>% summarize(kb_blocks = sum(kb_blocks)) %>%  pivot_wider(names_from = arch_perf, values_from = kb_blocks)
+
+results_arch %>% group_by(ind, hap, rep, sim) %>% summarize(fn = sum(FN), tp = sum(TP), fp = sum(FP), precision = tp / (tp + fp), sensitivity = tp / (tp + fn))
+
+p_precision <- results_arch %>% filter(rep != "") %>% group_by(hap, rep, sim, ind) %>% summarize(fn = sum(FN), tp = sum(TP), fp = sum(FP), precision = tp / (tp + fp), sensitivity = tp / (tp + fn)) %>%  ggplot(aes(x = sim, y = precision, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Precision", color = "Repetition", title = "Archaic Inference Precision")
+plot(p_precision)
+
+p_sensitivity <- results_arch %>% filter(rep != "") %>% group_by(hap, rep, sim, ind) %>% summarize(fn = sum(FN), tp = sum(TP), fp = sum(FP), precision = tp / (tp + fp), sensitivity = tp / (tp + fn)) %>% 
+  ggplot(aes(x = sim, y = sensitivity, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Sensitivity", color = "Repetition", title = "Archaic Inference Sensitivity")
+plot(p_sensitivity)
+
+pdf("plots/NeaDen_sims/archaic_sensitivity.pdf", height = 3, width = 3)
+plot(p_sensitivity)
+dev.off()
+
+pdf("plots/NeaDen_sims/archaic_precision.pdf", height = 3, width = 3)
+plot(p_precision)
+dev.off()
+```
+Classification Performance of Most Likely Method
+```{r}
+
+results_ML <- results %>% filter(arch_perf == "TP") %>%
+  select(-c(arch_perf, ND_perf)) %>% 
+  group_by(ML_perf, ind, hap, rep, sim) %>% 
+  summarize(kb_blocks = sum(kb_blocks)) %>% 
+  pivot_wider(names_from = ML_perf, values_from = kb_blocks) %>%
+  mutate("fragments" = TP + missclassified + unclassified)
+
+results_ML <- results_ML %>% mutate("TPrate" = TP / fragments, "unclassified" = unclassified / fragments, "wrong" = missclassified / fragments)
+
+p_ML_precision <- ggplot(results_ML, aes(x = sim, y = TPrate, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Precision", color = "Repetition", title = "Precision")
+plot(p_ML_precision)
+
+p_ML_unclassified <-  
+  ggplot(results_ML, aes(x = sim, y = unclassified, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Fraction of Inferred Archaic fragments", color = "Repetition", title = "Unclassified")
+plot(p_ML_unclassified)
+
+p_ML_missclassified <-  
+  ggplot(results_ML, aes(x = sim, y = wrong, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Fraction of Inferred Archaic fragments", color = "Repetition", title = "Miss-classified")
+plot(p_ML_missclassified)
+
+pdf("plots/NeaDen_sims/ML_unclassified.pdf", height = 3, width = 3)
+plot(p_ML_unclassified)
+dev.off()
+
+pdf("plots/NeaDen_sims/ML_missclassified.pdf", height = 3, width = 3)
+plot(p_ML_missclassified)
+dev.off()
+
+pdf("plots/NeaDen_sims/ML_precision.pdf", height = 3, width = 3)
+plot(p_ML_precision)
+dev.off()
+
+
+
+```
+
+Classification performance of ND method
+```{r}
+
+results_ND <- results %>% filter(arch_perf == "TP") %>%
+  select(-c(arch_perf, ML_perf)) %>% 
+  group_by(ND_perf, ind, hap, rep, sim) %>% 
+  summarize(kb_blocks = sum(kb_blocks)) %>% 
+  pivot_wider(names_from = ND_perf, values_from = kb_blocks) %>%
+  mutate("fragments" = TP + missclassified + unclassified + mosaic, "classified" = TP + missclassified)
+
+results_ND <- results_ND %>% mutate("precision" = TP / classified, "unclassified" = unclassified / fragments, "mosaic_precision" = mosaic / fragments)
+
+p_ND_precision <- ggplot(results_ND, aes(x = sim, y = precision, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Precision", color = "Repetition", title = "Precision")
+plot(p_ND_precision)
+
+p_ND_unclassified <-  
+  ggplot(results_ND, aes(x = sim, y = unclassified, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Fraction of Inferred Archaic fragments", color = "Repetition", title = "Unclassified")
+plot(p_ND_unclassified)
+
+p_ND_mosaic <-  
+  ggplot(results_ND, aes(x = sim, y = mosaic_precision, color = gsub("_", "", rep))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "All Archaic", y = "Fraction of Inferred Archaic fragments", color = "Repetition", title = "Mosaic")
+plot(p_ND_mosaic)
+
+pdf("plots/NeaDen_sims/ND_unclassified.pdf", height = 3, width = 3)
+plot(p_ND_unclassified)
+dev.off()
+
+pdf("plots/NeaDen_sims/ND_mosaic.pdf", height = 3, width = 3)
+plot(p_ND_mosaic)
+dev.off()
+
+pdf("plots/NeaDen_sims/ND_precision.pdf", height = 3, width = 3)
+plot(p_ND_precision)
+dev.off()
+
+```
+
+
+Save some of the above plots
+```{r}
+
+#pdf("plots/hmmix_performance_ALL.pdf", height = 4, width = 6)
+#plot(p_perf_all)
+#dev.off()
+
+pdf("plots/hmmix_precision.pdf", height = 4, width = 5)
+plot(p_precision)
+dev.off()
+
+pdf("plots/hmmix_sensitivity.pdf", height = 4, width = 5)
+plot(p_sensitivity)
+dev.off()
+
+pdf("plots/hmmix_inferredAncestry.pdf", height = 4, width = 5)
+plot(p_inf_sum)
+dev.off()
+
+pdf("plots/hmmix_introgressedAncestry.pdf", height = 4, width = 5)
+plot(p_intro_sum)
+dev.off()
+```
+
+Look at the emission and transition probabilities across all of the simulations
+```{r}
+results <- data.frame()
+for (sim in c("bigNonAfr", "smallAfr", "late", "early", "low", "simple", "LS_ice", "LS_pap", "simpleLS")){
+  print(sim)
+  for (rep in c("_1", "_2", "_3")){
+    print(rep)
+    # skip additional reps for the simulations where I only have 1 rep
+    if (sim %in% c("smallAfr", "bigNonAfr") & !(rep %in% c("", "_1"))){
+      next
+    }
+    if (sim %in% c("LS_ice", "LS_pap", "simpleLS") & (rep %in% c("", "_2", "_3"))){
+      next
+    }
+    for (nafr in c("100", "200")){
+      print(nafr)
+      if (sim %in% c("late", "early", "low") & (nafr %in% c("200"))){
+        next
+      }
+      if (sim %in% c("simple") & nafr == "200" & rep != ""){
+        next
+      }
+      for (i in 1:20){
+      params <- fromJSON(file=paste0("simdat/denisovan_", sim,  rep, "/hmmix/trained/trained.", nafr, ".NAMH_", i, ".json"))
+      tmp_results <- data.frame("labs" = params$state_names, 
+                         "start" = params$starting_probabilities, 
+                         "emissions" = params$emissions, 
+                         "trans1" = unname(params$transitions[[1]]), 
+                         "trans2" = unname(params$transitions[[2]]))
+      tmp_results <- tmp_results %>% mutate("sim" = sim,
+                                            "indiv" = paste0("NAMH_", i), "rep" = rep, "nafr" = nafr)
+      results <- rbind(results, tmp_results)
+      }
+    }
+  }
+}
+
+p_emissions <- results %>%
+  filter(rep == "_1") %>%
+ggplot(aes(x = sim, y = emissions, color = nafr)) +
+  geom_boxplot() +
+  labs(x = "simulation", y = "Emissions ratio (Archaic / human)", title = "Emissions Ratio (Archaic / Human)", color = "Number\nAfricans") +
+  facet_wrap(~labs, scales = "free")
+plot(p_emissions)
+
+p_ratio <- results %>% dplyr::select(sim, rep, emissions, labs, indiv, nafr) %>% pivot_wider(names_from = labs, values_from = emissions) %>% mutate("ratio" = Archaic / Human) %>% 
+  filter(rep == "_1") %>%
+ggplot(aes(x = sim, y = ratio, color = nafr)) +
+  geom_boxplot() +
+  labs(x = "simulation", y = "Emissions ratio (Archaic / human)", title = "Emissions Ratio (Archaic / Human)", color = "Number\nAfricans") +
+  geom_hline(yintercept = 10)
+plot(p_ratio)
+
+# we are inferring around 7% archaic ancestry (5 was simulated)
+p_start <- results %>% filter(rep == "_1", labs == "Archaic") %>% 
+  ggplot(aes(x = sim, y = start, color = nafr)) +
+  labs(y = "Starting Probability", x = "Simulation", title = "Starting Probability", color = "Number\nAfricans") +
+  geom_boxplot()
+plot(p_start)
+
+
+# transition
+results$transition <- ifelse(results$labs == "Human", results$trans1, results$trans2)
+
+p_transition <- results %>% filter(rep == "_1") %>% ggplot(aes(x = sim, y = transition, color = nafr)) +
+  geom_boxplot() +
+  labs(y = "Transition Probability (Within a state)", x = "Simulation", title = "Transition Probabilities", color = "Number\nAfricans") +
+  facet_wrap(~labs, scales = "free_y")
+plot(p_transition)
+
+# ok get the results for what I analyze down the line:
+p_include <- results %>% filter(sim %in% c("early", "late", "low", "simple")) %>% pivot_longer(cols = c(emissions, transition)) %>%
+  ggplot(aes(x = sim, y = value, color = rep)) +
+  geom_boxplot() +
+  facet_grid(name ~ labs, scale = "free")
+
+plot(p_include)
+```
+Save some of htese plots
+```{r}
+pdf("plots/hmmix_ratio.pdf", height = 4, width = 7)
+plot(p_ratio)
+dev.off()
+
+pdf("plots/hmmix_starting.pdf", height = 4, width = 7)
+plot(p_start)
+dev.off()
+
+pdf("plots/hmmix_transition.pdf", height = 4, width = 5)
+plot(p_transition)
+dev.off()
+
+pdf("plots/hmmix_included_allValues.pdf", height = 4, width = 5)
+plot(p_include)
+dev.off()
+
+pdf("plots/hmmix_emissions.pdf", height = 4, width = 5)
+plot(p_emissions)
+
+```
+
+Other testing notes:
+1. I confirmed that the training is truly being done per haplotype (I manually removed the second haplotype and reran the train module, and got identical results)

@@ -7,3 +7,5 @@ src/__pycache__/
 simdat/
 .Rdata
 .Rhistory
+1000G_observations/
+previous_simdat/

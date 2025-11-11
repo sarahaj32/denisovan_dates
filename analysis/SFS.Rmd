@@ -1,0 +1,429 @@
+---
+title: "SFS Analysis"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+Here I look at the SFS of ND01 and ND10 positions in worldwide populations
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(tidyverse)
+```
+
+First, read in the data for a population, lets start with CHB
+```{r}
+popu <- "CHB"
+dat <- read.table(paste0("data/1000G/ND_VCF_refFill_Masked/", popu, "/1000G_", popu, "_ND11pos_hg19_modernRefFill_allChr_freqs.txt"))
+colnames(dat) <- c("chrom", "pos", "ref", "alt", "nalt", "nall", "alt_freq")
+dat$refFill <- dat$nalt == "."
+dat$alt_freq <- ifelse(dat$alt_freq == ".", 0, dat$alt_freq)
+dat$nalt <- ifelse(dat$nalt == ".", 0, dat$nalt)
+dat$chrom <- gsub("chr", "", dat$chrom)
+
+print(nrow(dat))
+```
+
+Read in YRI and ND info so we can categorize these frequencies
+```{r}
+ND <- read.table("data/hg19/snp_annotations/ND11_hg19_masked.txt")
+colnames(ND) <- c("chrom", "pos", "anc", "der", "Vindija16", "Denisova", "YRI_d", "YRI_a", "YRI_fd", "Chimp", "class")
+ND$chrom <- gsub("chr", "", ND$chrom)
+```
+
+And combine datasets, this is my test in CHB:
+```{r}
+comb <- merge(ND, dat, by = c("chrom", "pos"))
+comb$pos <- as.numeric(comb$pos)
+comb$nall <- as.numeric(comb$nall)
+comb$nalt <- as.numeric(comb$nalt)
+comb$alt_freq <- as.numeric(comb$alt_freq)
+comb$alt_freq <- round(comb$alt_freq, digits = 3)
+comb$need2fold <- comb$alt_freq > 0.5
+comb$folded <- ifelse(comb$alt_freq > 0.5, round((comb$nall - comb$nalt / comb$nall), 3), comb$alt_freq) 
+comb$folded <- round(comb$folded, digits = 3)
+comb$der_freq <- ifelse((comb$der == comb$alt) | (comb$alt == "." | comb$ref == comb$anc), comb$alt_freq, round(1-comb$alt_freq, digits = 3))
+  
+pos <- nrow(comb)
+pos_var <- comb %>% filter(folded > 0) %>% nrow()
+
+```
+
+This is the path to the 1000G frequency files:
+data/1000G/ND_VCF_refFill_Masked/EAS/1000G_EAS_ND11pos_hg19_modernRefFill_allChr_freqs.txt
+
+data/1000G/ND_VCF_refFill_Masked/CHB/1000G_CHB_ND11pos_hg19_modernRefFill_allChr_freqs.txt
+
+```{r}
+comb %>% filter(der_freq > 0, der_freq < 1) %>% 
+ggplot(aes(x = der_freq)) +
+  geom_histogram(bins = indivs - 1) +
+  theme_bw() +
+  labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed"), x = "Derived Frequency in population", y = "# of positions") +
+  facet_wrap(~class)
+
+```
+It's a little weird that we have a shift to high frequency snps too - though I'd imagine these could just be very old snps. Let see how their frequency correlates to African frequency. OK good - most of those that are at high frequency are also present at relatively high frequencies in YRI. These are likely just very old positions then, that for whatever reason are not in Neanderthal or Denisovan.
+
+```{r}
+comb %>% 
+  filter(chrom == 1) %>% 
+  ggplot(aes(x = der_freq, y = YRI_fd)) + 
+  geom_point() + 
+  theme_bw() +
+  facet_wrap(~class)
+
+```
+
+SFS plots for the 1000G populations of interest, using un-folded frequency
+```{r}
+# we have to adjust the peaks based on how many individuals there are, each bar is a single frequency
+for (popu in c("CHB", "PJL", "EAS")){
+  dat <- read.table(paste0("data/1000G/ND_VCF_refFill_Masked/", popu, "/1000G_", popu, "_ND11pos_hg19_modernRefFill_allChr_freqs.txt"))
+  colnames(dat) <- c("chrom", "pos", "ref", "alt", "nder", "nall", "alt_freq")
+  dat$chrom <- gsub("chr", "", dat$chrom)
+  dat$alt_freq <- ifelse(dat$alt_freq == ".", 0, dat$alt_freq)
+  dat$nder <- ifelse(dat$nder == ".", 0, dat$nder)
+
+  comb <- merge(ND, dat, by = c("chrom", "pos"))
+  comb$pos <- as.numeric(comb$pos)
+  comb$alt_freq <- as.numeric(comb$alt_freq)
+  comb$der_freq <- ifelse((comb$der == comb$alt) | (comb$alt == "." | comb$ref == comb$anc), comb$alt_freq, round(1-comb$alt_freq, digits = 3))
+
+  indivs = max(comb$nall) / 2
+  
+  # also get the counts of how many segregating positions within each population:
+  all_counts <- comb %>% filter(der_freq > 0, der_freq < 1) %>% group_by(class) %>% summarize("n" = n())
+  all_counts$y <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_d == 2)  %>% nrow() * 2
+  YRIanc_counts <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_fd == 0) %>% group_by(class) %>% summarize("n" = n()) 
+  YRIanc_counts$y <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_d == 2)  %>% nrow()
+  
+  
+  der <- comb %>% filter(der_freq > 0, der_freq < 1) %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = round((indivs-1) / 4)) +
+    theme_bw() +
+    geom_text(data = all_counts, aes(label = paste0("n pos: ", n)), x = 0.5, y = max(all_counts$y)) +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed positions")) +
+    facet_wrap(~class)
+  plot(der)
+  
+  pdf(paste0("plots/SFS/1000G_", popu, "_segregating.pdf"), height = 3, width = 5)
+  plot(der)
+  dev.off()
+  
+  # also plot positions where YRI derived frequency = 0
+  der_YRIanc <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_fd == 0) %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = round((indivs-1) / 4)) +
+    theme_bw() +
+        geom_text(data = YRIanc_counts, aes(label = paste0("n pos: ", n)), x = 0.5, y = max(YRIanc_counts$y)) +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed, YRI der freq = 0")) +
+    facet_wrap(~class)
+  plot(der_YRIanc)
+  
+  pdf(paste0("plots/SFS/1000G_", popu, "_YRIanc_segregating.pdf"), height = 3, width = 5)
+  plot(der_YRIanc)
+  dev.off()
+  
+  der_all <- comb %>% filter() %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = round((indivs-1) / 4)) +
+    theme_bw() +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nAll Positions")) +
+    facet_wrap(~class)
+  plot(der_all)
+ 
+}
+```
+
+I want to compare this to ND00 positions as a "null": use all frequency data from 1000G and merge:
+
+```{r}
+ND_all <- read.table("data/hg19/snp_annotations/ND_hg19.txt")
+colnames(ND_all) <- c("chrom", "pos", "anc", "der", "Vindija16", "Denisova", "YRI_d", "YRI_a", "YRI_fd", "Chimp", "class")
+ND00 <- filter(ND_all, class == "nd00")
+
+ND00_pops <- data.frame()
+popu <- "CHB"
+i <- 2
+
+print(i)
+tmp_freq <- read.table(paste0("data/1000G/VCF_frequencies/", popu, "/1000G_", popu, "_hg19_chr", i, "_pilotMask_freqs.txt"))
+colnames(tmp_freq) <- c("chrom", "pos", "ref", "alt", "n_der", "n_all", "alt_freq")
+tmp_freq$chrom <- gsub("chr", "", tmp_freq$chrom)
+tmp_ND00 <- merge(tmp_freq, ND_all, by = c("chrom", "pos"))
+
+tmp_ND00$alt_freq <- as.numeric(tmp_ND00$alt_freq)
+tmp_ND00$der_freq <- ifelse((tmp_ND00$der == tmp_ND00$alt) | (tmp_ND00$alt == "." | tmp_ND00$ref == tmp_ND00$anc), tmp_ND00$alt_freq, round(1-tmp_ND00$alt_freq, digits = 3))
+
+alleles = max(tmp_ND00$n_all) 
+indivs = alleles / 2
+
+pdf("plots/SFS/CHB_2_YRI09.pdf", height = 5, width = 6)
+tmp_ND00 %>% filter(der_freq > 0, der_freq < 1, YRI_fd > 0.9) %>% ggplot(aes(x = der_freq)) +
+  geom_histogram(bins = indivs - 1) +
+  theme_bw() +
+  labs(title = "YRI derived frequency > 90%") +
+  facet_wrap(~class, scales = "free")
+dev.off()
+
+pdf("plots/SFS/CHB_2_YRI01.pdf", height = 5, width = 6)
+tmp_ND00 %>% filter(der_freq > 0, der_freq < 1, YRI_fd < 0.1) %>% ggplot(aes(x = der_freq)) +
+  geom_histogram(bins = indivs - 1) +
+  theme_bw() +
+  labs(title = "YRI derived frequency < 10%") +
+  facet_wrap(~class, scales = "free")
+dev.off()
+
+pdf("plots/SFS/CHB_2.pdf", height = 5, width = 6)
+tmp_ND00 %>% filter(der_freq > 0, der_freq < 1) %>% ggplot(aes(x = der_freq)) +
+  geom_histogram(bins = indivs - 1) +
+  theme_bw() +
+  labs(title = "Excluding Fixed Sites") +
+  facet_wrap(~class, scales = "free")
+dev.off()
+
+```
+
+
+
+
+Repeat with the Oceanian individuals from the Choin dataset
+```{r}
+# we have to adjust the peaks based on how many individuals there are, each bar is a single frequency
+for (popu in c("PNG", "Agta", "Atayal", "BKA", "POL", "SCI", "SLI", "VAN", "Paiwan", "Cebuano")){
+  dat <- read.table(paste0("data/choin/choin_frequencies/choin_", popu, "_ND11pos_hg19_modernRefFill_allChr_freqs.txt"))
+  colnames(dat) <- c("chrom", "pos", "ref", "alt", "nder", "nall", "alt_freq")
+  dat$chrom <- gsub("chr", "", dat$chrom)
+  dat$alt_freq <- ifelse(dat$alt_freq == ".", 0, dat$alt_freq)
+
+  comb <- merge(ND, dat, by = c("chrom", "pos"))
+  comb$pos <- as.numeric(comb$pos)
+  comb$alt_freq <- as.numeric(comb$alt_freq)
+  comb$der_freq <- ifelse((comb$der == comb$alt) | (comb$alt == "." | comb$ref == comb$anc), comb$alt_freq, round(1-comb$alt_freq, digits = 3))
+
+  alleles = max(comb$nall)
+  indivs = alleles / 2
+  
+  # also get the counts of how many segregating positions within each population:
+  all_counts <- comb %>% filter(der_freq > 0, der_freq < 1) %>% group_by(class) %>% summarize("n" = n())
+  all_counts$y <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_d == 2)  %>% nrow() * 2
+  YRIanc_counts <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_fd == 0) %>% group_by(class) %>% summarize("n" = n())
+  YRIanc_counts$y <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_d == 2)  %>% nrow() 
+  
+  der <- comb %>% filter(der_freq > 0, der_freq < 1) %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = alleles - 1 ) +
+    theme_bw() +
+    geom_text(data = all_counts, aes(label = paste0("n pos: ", n)), x = 0.5, y = max(all_counts$y)) +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed positions")) +
+    facet_wrap(~class)
+  plot(der)
+  
+  pdf(paste0("plots/SFS/choin_", popu, "_segregating.pdf"), height = 3, width = 5)
+  plot(der)
+  dev.off()
+  
+  # also plot positions where YRI derived frequency = 0
+  der_YRIanc <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_fd == 0) %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = alleles - 1) +
+    theme_bw() +
+        geom_text(data = YRIanc_counts, aes(label = paste0("n pos: ", n)), x = 0.5, y = max(YRIanc_counts$y)) +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed, YRI der freq = 0")) +
+    facet_wrap(~class)
+  plot(der_YRIanc)
+  
+  pdf(paste0("plots/SFS/choin_", popu, "_YRIanc_segregating.pdf"), height = 3, width = 5)
+  plot(der_YRIanc)
+  dev.off()
+  
+  der_all <- comb %>% filter() %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = alleles - 1) +
+    theme_bw() +
+    labs(title = paste0("Folded ", popu, ": ", indivs, " individuals\nExcluding freq = 0")) +
+    facet_wrap(~class)
+  plot(der_all)
+}
+
+```
+
+Look at the combined oceanian populations:
+
+```{r}
+for (popu in c("Oceania", "SoutheastAsia", "EastAsia")){
+  dat <- read.table(paste0("data/choin/choin_frequencies/choin_", popu, "_ND11pos_hg19_modernRefFill_allChr_freqs.txt"))
+  colnames(dat) <- c("chrom", "pos", "ref", "alt", "nder", "nall", "alt_freq")
+  dat$chrom <- gsub("chr", "", dat$chrom)
+  dat$alt_freq <- ifelse(dat$alt_freq == ".", 0, dat$alt_freq)
+
+  comb <- merge(ND, dat, by = c("chrom", "pos"))
+  comb$pos <- as.numeric(comb$pos)
+  comb$alt_freq <- as.numeric(comb$alt_freq)
+  comb$der_freq <- ifelse((comb$der == comb$alt) | (comb$alt == "." | comb$ref == comb$anc), comb$alt_freq, round(1-comb$alt_freq, digits = 3))
+  
+  alleles = max(comb$nall)
+  indivs = alleles / 2
+  
+  # also get the counts of how many segregating positions within each population:
+  all_counts <- comb %>% filter(der_freq > 0, der_freq < 1) %>% group_by(class) %>% summarize("n" = n())
+  all_counts$y <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_d == 2)  %>% nrow()
+  YRIanc_counts <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_fd == 0) %>% group_by(class) %>% summarize("n" = n())
+  YRIanc_counts$y <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_d == 2)  %>% nrow() / 2
+  
+  der <- comb %>% filter(der_freq > 0, der_freq < 1) %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = alleles - 1) +
+    theme_bw() +
+    geom_text(data = all_counts, aes(label = paste0("n pos: ", n)), x = 0.5, y = max(all_counts$y)) +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed positions")) +
+    facet_wrap(~class)
+  plot(der)
+  
+  pdf(paste0("plots/SFS/choin_", popu, "_segregating.pdf"), height = 3, width = 5)
+  plot(der)
+  dev.off()
+  
+  # also plot positions where YRI derived frequency = 0
+  der_YRIanc <- comb %>% filter(der_freq > 0, der_freq < 1, YRI_fd == 0) %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = alleles - 1) +
+    theme_bw() +
+        geom_text(data = YRIanc_counts, aes(label = paste0("n pos: ", n)), x = 0.5, y = max(YRIanc_counts$y)) +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed, YRI der freq = 0")) +
+    facet_wrap(~class)
+  plot(der_YRIanc)
+  
+  pdf(paste0("plots/SFS/choin_", popu, "_YRIanc_segregating.pdf"), height = 3, width = 5)
+  plot(der_YRIanc)
+  dev.off()
+  
+  der_all <- comb %>% filter() %>% 
+  ggplot(aes(x = der_freq)) +
+    geom_histogram(bins = alleles - 1) +
+    theme_bw() +
+    labs(title = paste0("Folded ", popu, ": ", indivs, " individuals\nExcluding freq = 0")) +
+    facet_wrap(~class)
+  plot(der_all)
+}
+
+```
+
+
+Also look at the folded plots - though these are not really what we are interested in 
+since we loose the granularity to actually detect differences
+```{r}
+# we have to adjust the peaks based on how many individuals there are, each bar is a single frequency
+for (popu in c("CHB", "PJL", "EAS")){
+  dat <- read.table(paste0("data/1000G/ND_VCF_refFill_Masked/", popu, "/1000G_", popu, "_ND11pos_hg19_modernRefFill_allChr_freqs.txt"))
+  colnames(dat) <- c("chrom", "pos", "ref", "alt", "nder", "nall", "alt_freq")
+  dat$refFill <- dat$nder == "."
+  dat$alt_freq <- ifelse(dat$alt_freq == ".", 0, dat$alt_freq)
+  dat$nder <- ifelse(dat$nder == ".", 0, dat$nder)
+  print(nrow(dat))
+  
+  comb <- merge(ND, dat, by = c("chrom", "pos"))
+  comb$pos <- as.numeric(comb$pos)
+  comb$alt_freq <- as.numeric(comb$alt_freq)
+  comb$folded <- ifelse(comb$alt_freq > 0.5, 1-comb$alt_freq, comb$alt_freq)
+  
+  indivs = max(comb$nall)
+  folded_indivs = round(indivs / 2)
+  
+  fold <- comb %>% filter(!refFill, folded > 0) %>% 
+  ggplot(aes(x = folded)) +
+    geom_histogram(bins = folded_indivs) +
+    theme_bw() +
+    labs(title = paste0("Folded ", popu, ": ", indivs, " individuals\nExcluding freq = 0")) +
+    facet_wrap(~class)
+  plot(fold)
+  
+  fold_all <- comb %>% filter(!refFill) %>% 
+  ggplot(aes(x = folded)) +
+    geom_histogram(bins = folded_indivs + 1) +
+    theme_bw() +
+    labs(title = paste0("Folded", popu, ": ", indivs, " individuals")) +
+    facet_wrap(~class)
+  plot(fold_all)
+  
+  full <- comb %>% filter(!refFill, alt_freq > 0, alt_freq < 1) %>% 
+  ggplot(aes(x = alt_freq)) +
+    geom_histogram(bins = indivs - 1) +
+    theme_bw() +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed")) +
+    facet_wrap(~class)
+  plot(full)
+  
+  full_all <- comb %>% 
+  ggplot(aes(x = alt_freq)) +
+    geom_histogram(bins = indivs) +
+    theme_bw() +
+    labs(title = paste0(popu, ": ", indivs, " individuals")) +
+    facet_wrap(~class)
+  plot(full_all)
+}
+```
+
+
+the choin have also now transferred over
+```{r}
+# we have to adjust the peaks based on how many individuals there are, each bar is a single frequency
+popu <- "PNG"
+for (popu in c("PNG", "Agta", "Atayal", "BKA", "POL", "SCI", "SLI", "VAN", "Paiwan", "Cebuano")){
+  dat <- read.table(paste0("data/choin/choin_frequencies/choin_", popu, "_ND11pos_hg19_modernRefFill_allChr_freqs.txt"))
+  colnames(dat) <- c("chrom", "pos", "ref", "alt", "nder", "nall", "alt_freq")
+  dat$refFill <- dat$nder == "."
+  dat$alt_freq <- ifelse(dat$alt_freq == ".", 0, dat$alt_freq)
+  dat$nder <- ifelse(dat$nder == ".", 0, dat$nder)
+  print(nrow(dat))
+  
+  comb <- merge(ND, dat, by = c("chrom", "pos"))
+  comb$pos <- as.numeric(comb$pos)
+  comb$alt_freq <- as.numeric(comb$alt_freq)
+  comb$folded <- ifelse(comb$alt_freq > 0.5, 1-comb$alt_freq, comb$alt_freq)
+  
+  indivs = max(comb$nall)
+  folded_indivs = round(indivs / 2)
+  
+  fold <- comb %>% filter(!refFill, folded > 0) %>% 
+  ggplot(aes(x = folded)) +
+    geom_histogram(bins = folded_indivs) +
+    theme_bw() +
+    labs(title = paste0("Folded ", popu, ": ", indivs, " individuals\nExcluding freq = 0")) +
+    facet_wrap(~class)
+  plot(fold)
+  
+  fold_all <- comb %>% filter(!refFill) %>% 
+  ggplot(aes(x = folded)) +
+    geom_histogram(bins = folded_indivs + 1) +
+    theme_bw() +
+    labs(title = paste0("Folded", popu, ": ", indivs, " individuals")) +
+    facet_wrap(~class)
+  plot(fold_all)
+  
+  full <- comb %>% filter(!refFill, alt_freq > 0, alt_freq < 1, YRI_fd == 0) %>% 
+  ggplot(aes(x = alt_freq)) +
+    geom_histogram(bins = indivs - 1) +
+    theme_bw() +
+    labs(title = paste0(popu, ": ", indivs, " individuals\nExcluding fixed")) +
+    facet_wrap(~class)
+  plot(full)
+  
+  full_all <- comb %>% 
+  ggplot(aes(x = alt_freq)) +
+    geom_histogram(bins = indivs) +
+    theme_bw() +
+    labs(title = paste0(popu, ": ", indivs, " individuals")) +
+    facet_wrap(~class)
+  plot(full_all)
+}
+
+```
+

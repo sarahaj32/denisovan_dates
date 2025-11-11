@@ -1,0 +1,252 @@
+---
+title: "Archaic Fragment Length Analysis"
+output:
+  html_document:
+    df_print: paged
+---
+
+Look at the lengths of inferred archaic fragments (as a potential way of dating relative gene-flow events)
+Try filtering the fragments by varying means(Affinity, NDxx positions)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/global/scratch/p2p3/pl1_moorjani/sarahj32/denisova_dating")
+rm(list = ls())
+
+library(MASS)
+library(tidyverse)
+
+# set plotting settings and variables
+theme_set(theme_bw() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)))
+
+# countour plot parameters:
+zoom=F
+xlab="Match to Altai Neanderthal"
+ylab="Match to Altai Denisovan"
+level1=seq(0.3,0.9,0.1)
+level2=seq(1,30,1)
+
+```
+
+```{r, echo = F}
+# a function for classifying each fragment
+add_classes <- function(dat){
+  dat$class_1 <- ifelse(dat$nea_overlap > dat$den_overlap, "Neanderthal", 
+                       ifelse(dat$nea_overlap < dat$den_overlap, "Denisova", 
+                              ifelse(dat$nea_overlap == 0 & dat$den_overlap ==  0, "None",
+                                     ifelse(dat$nea_overlap == dat$den_overlap, "Both", "Problem"))))
+  
+  print("CLASS 1 Done")
+  dat %>% group_by(class_1) %>% summarize(n()) %>% print()
+
+    
+  dat$class_1_LS <- ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) > dat$Denisova, "Neanderthal", 
+                     ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) < dat$Denisova, "Denisova", 
+                            ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) == 0 & dat$Denisova ==  0, "None",
+                                   ifelse(pmax(dat$AltaiNeandertal, dat$Vindija33.19, dat$Chagyrskaya.Phalanx) == dat$Denisova, "Both", "Problem"))))
+  
+  print("CLASS 1 LS Done")
+  dat %>% group_by(class_1_LS) %>% summarize(n()) %>% print()
+
+  dat$class_2 <- ifelse(dat$ND01 > 0 & dat$ND10 == 0, "ND01", 
+                         ifelse(dat$ND10 > 0 & dat$ND01 == 0, "ND10", 
+                                ifelse(dat$ND11 > 0 & dat$ND01 == 0 & dat$ND10 == 0, "ND11", 
+                                       ifelse(dat$ND01 == 0 & dat$ND10 == 0 & dat$ND11 == 0, "ND00", "Mosaic"))))
+  
+  print("CLASS 2 Done")
+  dat %>% group_by(class_2) %>% summarize(n()) %>% print()
+  return(dat)
+}
+```
+
+```{r, echo = F}
+bootstrap <- function(values, n = 100){
+  values <- unlist(lapply(values, as.numeric))
+  num <- length(values)
+  m <- mean(values)
+  bs <- rep(0, n)
+  for (i in 1:n){
+    bs[i] <- mean(sample(values, num, replace = T))
+  }
+  low <- quantile(bs, 0.05)
+  high <- quantile(bs, 0.95)
+  return(c(m, low, high))
+}
+```
+
+```{r, echo = F}
+get_lengths <- function(dat){
+    den_bs <- dat %>% filter(comp >= 10, class_1 == "Denisova") %>% dplyr::select(length) %>% bootstrap()
+  ND01_bs <- dat %>% filter(comp >= 10, class_2 == "ND01") %>% dplyr::select(length) %>% bootstrap()
+
+  den_high_bs <- dat %>% filter(comp >= 10, class_1 %in% c("Denisova"), den_affinity >= 0.7, nea_affinity <= 0.3) %>% dplyr::select(length) %>% bootstrap()
+  den_low_bs <- dat %>% filter(comp >= 10, class_1 %in% c("Denisova"), den_affinity < 0.7, den_affinity >= 0.4, nea_affinity <= 0.3) %>% dplyr::select(length) %>% bootstrap()
+  nea_bs <- dat %>% filter(comp >= 10, class_1 %in% c("Neanderthal")) %>% dplyr::select(length) %>% bootstrap()
+  nea_thresh_bs <- dat %>% filter(comp >= 10, class_1 %in% c("Neanderthal"), nea_affinity >= 0.5, den_affinity <= 0.3) %>% dplyr::select(length) %>% bootstrap()
+  ND10_bs <- dat %>% filter(comp >= 10, class_2 == "ND10") %>% dplyr::select(length) %>% bootstrap()
+
+  
+  tmp <- data.frame("den" = den_bs, "ND01" = ND01_bs, "den_high" = den_high_bs, "den_low" = den_low_bs, "nea" = nea_bs, "nea_only" = nea_thresh_bs, "ND10" = ND10_bs, "type" = c("bs_mean", "low", "high"))
+  return(tmp)
+}
+```
+
+
+```{r}
+# choin lengths
+choin_pops <- c("VAN", "Paiwan", "PNG", "Agta", "Atayal", "BKA", "Cebuano", "EastAsia", "Oceania", "POL", "SCI", "SLI", "SoutheastAsia")
+
+lengths <- data.frame() 
+for (pop in choin_pops){
+  print(pop)
+  dat <- read.table(paste0("data/choin/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+
+  dat <- add_classes(dat)
+  tmp <- get_lengths(dat)
+  tmp$pop <- pop
+  tmp$dataset <- "choin"
+  lengths <- rbind(lengths, tmp)
+}
+
+choin_lengths <- lengths %>% pivot_longer(cols = c(den, den_high, den_low, nea, nea_only, ND01, ND10)) %>% pivot_wider(names_from = type, values_from = value)
+
+ggplot(choin_lengths, aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+
+filter(choin_lengths, name %in% c("den", "nea"), pop %in% c("Agta", "PNG", "VAN","SLI", "SCI", "BKA", "POL",  "Oceania") ) %>% ggplot(aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+
+filter(choin_lengths, pop %in% c("Agta", "PNG", "VAN","SLI", "SCI", "BKA", "POL",  "Oceania") ) %>% ggplot(aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+```
+
+Include 1000G data
+```{r}
+G1000_pops <- c("CHB", "EAS", "PJL", "SAS", "GIH", "CHS", "ITU")
+
+lengths <- data.frame() 
+for (pop in G1000_pops){
+  print(pop)
+  dat <- read.table(paste0("data/1000G/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  if ("Altai" %in% colnames(dat)){
+    dat <- rename(dat, "AltaiNeandertal" = Altai, "Vindija33.19" = Vindija, Chagyrskaya.Phalanx = "Chagyrskaya")
+  }
+  
+  dat <- add_classes(dat)
+
+  tmp <- get_lengths(dat)
+  tmp$pop <- pop
+  tmp$dataset <- "1000G"
+  lengths <- rbind(lengths, tmp)
+}
+
+G1000_lengths <- lengths %>% pivot_longer(cols = c(den, den_high, den_low, nea, nea_only, ND01, ND10)) %>% pivot_wider(names_from = type, values_from = value)
+
+ggplot(G1000_lengths, aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+
+G1000_lengths %>% filter(pop %in% c("CHB", "PJL", "EAS", "SAS"), name %in% c("den", "nea")) %>% ggplot(aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+```
+
+Genome Asia
+```{r}
+GAv1_pops <- c("AET", "ATI", "PAP", "KOR", "JPN", "Indonesia", "Philippines", "SEA", "SAS", "NEA", "OCE")
+
+lengths <- data.frame() 
+for (pop in GAv1_pops){
+  print(pop)
+  dat <- read.table(paste0("data/GAv1/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  if ("Altai" %in% colnames(dat)){
+    dat <- rename(dat, "AltaiNeandertal" = Altai, "Vindija33.19" = Vindija, Chagyrskaya.Phalanx = "Chagyrskaya")
+  }
+  
+  dat <- add_classes(dat)
+
+  tmp <- get_lengths(dat)
+  tmp$pop <- pop
+  tmp$dataset <- "GAv1"
+  lengths <- rbind(lengths, tmp)
+}
+GAv1_lengths <- lengths %>% pivot_longer(cols = c(den, den_high, den_low, nea, nea_only, ND01, ND10)) %>% pivot_wider(names_from = type, values_from = value)
+
+ggplot(GAv1_lengths, aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+```
+
+LASIDAD
+```{r}
+LASI_pops <- c("North", "South", "West", "East", "Central", "North-East", "singlePulse", "multiPulse", "noMultiPulse")
+
+lengths <- data.frame() 
+for (pop in LASI_pops){
+  print(pop)
+  dat <- read.table(paste0("data/LASIDAD/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  if ("Altai" %in% colnames(dat)){
+    dat <- rename(dat, "AltaiNeandertal" = Altai, "Vindija33.19" = Vindija, Chagyrskaya.Phalanx = "Chagyrskaya")
+  }
+  
+  dat <- add_classes(dat)
+
+  tmp <- get_lengths(dat)
+  tmp$pop <- pop
+  tmp$dataset <- "LASI"
+  lengths <- rbind(lengths, tmp)
+}
+LASI_lengths <- lengths %>% pivot_longer(cols = c(den, den_high, den_low, nea, nea_only, ND01, ND10)) %>% pivot_wider(names_from = type, values_from = value)
+
+ggplot(LASI_lengths, aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+```
+HGDP OCeania
+```{r}
+
+lengths <- data.frame() 
+for (pop in "OCEANIA"){
+  print(pop)
+  dat <- read.table(paste0("data/HGDP/", pop, "/fragments/", pop, "_fragments_snps10_08_nonoverlapping_full.bed"), header = T)
+  if ("Altai" %in% colnames(dat)){
+    dat <- rename(dat, "AltaiNeandertal" = Altai, "Vindija33.19" = Vindija, Chagyrskaya.Phalanx = "Chagyrskaya")
+  }
+  
+  dat <- add_classes(dat)
+
+  tmp <- get_lengths(dat)
+  tmp$pop <- pop
+  tmp$dataset <- "HGDP"
+  lengths <- rbind(lengths, tmp)
+}
+HGDP_lengths <- lengths %>% pivot_longer(cols = c(den, den_high, den_low, nea, nea_only, ND01, ND10)) %>% pivot_wider(names_from = type, values_from = value)
+
+ggplot(HGDP_lengths, aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+```
+
+
+Combine all lengths!!!!!!
+```{r}
+lengths <- do.call(rbind, list(choin_lengths, GAv1_lengths, LASI_lengths, G1000_lengths, HGDP_lengths))
+write.table(lengths, "summary_dat/fragment_lengths_perPop.txt", sep = "\t", quote = F, row.names = F)
+
+ggplot(lengths, aes(x = name, y = bs_mean, color = name)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = low, ymax = high)) +
+  facet_wrap(~pop)
+```
