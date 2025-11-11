@@ -1,0 +1,80 @@
+description: OOA
+time_units: years
+generation_time: 29
+
+demes:
+
+# archaic lineage
+- name: AFR
+  description: African lineage (ancestor to all future hominins)
+  start_time: .inf
+  epochs:
+  - {end_time: 0, start_size: 23_700}
+
+# archaic lineage
+- name: ARC
+  description: Archaics lineage 
+  ancestors: [AFR]
+  start_time: 575_000
+  epochs:
+  - {end_time: 415_000, start_size: 7100}
+
+- name: OOA
+  description: Out of Africa bottleneck
+  start_time: 62000
+  ancestors: [AFR]
+  epochs:
+  - {end_time: 59_100, start_size: 1000, end_size: 1000} # lasts for 100 generations
+  - {end_time: 0, start_size: 1000, end_size: 7000}
+
+
+# separation of Neanderthal and Denisovan lineages
+- name: NEA
+  description: Neanderthal lineage
+  ancestors: [ARC]
+  start_time: 415_000
+  epochs:
+  - {end_time: 0, start_size: 2000}
+- name: Altai
+  description: sequenced Altai neanderthal lineage
+  ancestors: [NEA]
+  start_time: 200_000
+  epochs:
+  - {start_size: 1000,  end_time: 0}
+- name: Vindija
+  description: sequenced Vindija neanderthal lineage
+  ancestors: [NEA]
+  start_time: 105_000
+  epochs:
+  - {start_size: 1000, end_time: 0}
+- name: Chagyrskaya
+  description: sequenced Chagyrskaya neanderthal lineage
+  ancestors: [NEA]
+  start_time: 150_000
+  epochs:
+  - {start_size: 1000, end_time: 0}
+
+- name: DEN
+  description: Denisovan lineage
+  start_time: 415_000
+  ancestors: [ARC]
+  epochs:
+  - {end_time: 0, start_size: 2000}
+- name: ALT_DEN
+  description: sequenced Denisovan lineage
+  start_time: 300_000
+  ancestors: [DEN]
+  epochs:
+  - {end_time: 0, start_size: 2000}
+
+
+pulses:
+- sources: [NEA]
+  dest: OOA
+  time: 50_000
+  proportions: [0.05]
+
+- sources: [DEN]
+  dest: OOA
+  time: 45_000
+  proportions: [0.05]

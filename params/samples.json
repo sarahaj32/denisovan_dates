@@ -1,0 +1,6 @@
+{"AFR":{"population":"AFR", "num_samples":200, "time":0, "ploidy":2},
+"NAMH":{"population": "OOA", "num_samples":100, "time":0, "ploidy":2},
+"NEA_1":{"population": "Altai", "num_samples":1, "time":0, "ploidy":2},
+"NEA_2":{"population": "Vindija", "num_samples":1, "time":0, "ploidy":2},
+"NEA_3":{"population": "Chagyrskaya", "num_samples":1, "time":0, "ploidy":2},
+"DEN":{"population":"ALT_DEN", "num_samples":1, "time":0, "ploidy":2}}
