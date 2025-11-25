@@ -9,7 +9,6 @@ from collections import defaultdict
 
 def read_bedfile(bed):
     # read in the bedfile into a dictionary of haplotype to list of [start, end] positions
-    i = 0
     hap_dict = defaultdict(list)
     with open(input_bed, 'r') as bed_file:
         hap_idx = 0
@@ -18,7 +17,7 @@ def read_bedfile(bed):
         for bed_line in bed_file:
             if "chrom" in bed_line:
                 bed_line = bed_line.strip().split("\t")
-                hap_idx = bed_line.index("hap")
+                hap_idx = [i for i, val in enumerate(bed_line) if "hap" in val or "hapID" in val][0]
                 start_idx = bed_line.index("start")
                 end_idx = bed_line.index("end")
                 continue
@@ -26,17 +25,15 @@ def read_bedfile(bed):
             bed_line = bed_line.strip().split("\t")
             # remove "hap" from the haplotype column if it exists
             hap = int(bed_line[hap_idx].replace("hap", ""))
-            if hap > i:
-                i += 1
-            if hap == i:
-                start = int(bed_line[start_idx])
-                end = int(bed_line[end_idx])
-                hap_dict[i].append([start, end])
-# as a final step, need to make sure the lists are sorted
+            # iterate through all haplotypes
+            start = int(bed_line[start_idx])
+            end = int(bed_line[end_idx])
+            hap_dict[hap].append([start, end])
+
     return(hap_dict)
 
 
-def find_ancestry(hap_dict, input_vcf, output_txt) -> None:
+def find_ancestry(hap_dict, input_vcf, output_txt, ploidy) -> None:
     count = 0 
     haps = len(hap_dict)
     with open(input_vcf, 'r') as vcf_file, open(output_txt, 'w') as out_file:
@@ -64,9 +61,19 @@ def find_ancestry(hap_dict, input_vcf, output_txt) -> None:
                     # print("COULD BE IN FRAGMENT")
                     # for each individual, check if the position is in any of their introgressed fragments
                     # loop through every other individual * 2 (we want both haplotypes from each individual):
-                    for ind in range(0, haps, 2):
+                    if ploidy == "haploid":
+                        p = 1
+                    elif ploidy == "diploid":
+                        p = 2
+                    else:
+                        print(f"ploidy must be 'haploid' or 'diploid', you provided {ploidy}")
+                        break
+                    
+                    # this will then iterate through either each individual or each haplotype
+                    for ind in range(0, haps, p):
                         if ind in hap_dict:
                             # print(hap_dict[ind][0])
+                            # if the position is after the first fragment's end, go to the next fragment:
                             while pos > hap_dict[ind][0][1]:
                                 # print("TESTING")
                                 # print(hap_dict)
@@ -74,32 +81,34 @@ def find_ancestry(hap_dict, input_vcf, output_txt) -> None:
                                 # print(hap_dict[ind][0])
                                 # print(f"Position {pos} is greater than end of fragment {hap_dict[ind][0][1]}, removing fragment")
                                 hap_dict[ind].pop(0)
+                                # if we have gone through all of the fragments, set to infinity so we don't keep checking
                                 if len(hap_dict[ind]) == 0:
                                     hap_dict[ind] = [[float('inf'), float('inf')]]
                                 # print("NEW")
                                 # print(hap_dict[ind])
-                            hap_dict[ind][0][0]
+                            #hap_dict[ind][0][0]
+                            # if hte position is in an introgressed fragment, set ancestry label to 1
                             if pos >= hap_dict[ind][0][0] and pos <= hap_dict[ind][0][1]:
-                                #print(f"Position {pos} on chromosome {chrom} is in introgressed fragment in individual {ind} on haplotype 1")
                                 ancestry_labs[ind] = 1
-                        if ind + 1 in hap_dict:
-                            while pos > hap_dict[ind + 1][0][1]:
-                                # print("TESTING")
-                                # print(hap_dict)
-                                # print(hap_dict[ind + 1])
-                                # print(hap_dict[ind + 1][0])
-                                # print(f"Position {pos} is greater than end of fragment {hap_dict[ind + 1][0][1]}, removing fragment")
-                                hap_dict[ind + 1].pop(0)
-                                if len(hap_dict[ind + 1]) == 0:
-                                    hap_dict[ind + 1] = [[float('inf'), float('inf')]]
-                            hap_dict[ind + 1][0][0]
-                            if pos >= hap_dict[ind + 1][0][0] and pos <= hap_dict[ind + 1][0][1]:
-                               # print(f"Position {pos} on chromosome {chrom} is in introgressed fragment in individual {ind} on haplotype 2")
-                                ancestry_labs[ind] += 1
-                    # print("ANCESTRY LABS:")
-                    # print(ancestry_labs)
-                # print(ancestry_labs)
-                filtered = ancestry_labs[::2]
+                        if ploidy == "diploid":
+                            if ind + 1 in hap_dict:
+                                while pos > hap_dict[ind + 1][0][1]:
+                                    # print("TESTING")
+                                    # print(hap_dict)
+                                    # print(hap_dict[ind + 1])
+                                    # print(hap_dict[ind + 1][0])
+                                    # print(f"Position {pos} is greater than end of fragment {hap_dict[ind + 1][0][1]}, removing fragment")
+                                    hap_dict[ind + 1].pop(0)
+                                    if len(hap_dict[ind + 1]) == 0:
+                                        hap_dict[ind + 1] = [[float('inf'), float('inf')]]
+                                hap_dict[ind + 1][0][0]
+                                if pos >= hap_dict[ind + 1][0][0] and pos <= hap_dict[ind + 1][0][1]:
+                                # print(f"Position {pos} on chromosome {chrom} is in introgressed fragment in individual {ind} on haplotype 2")
+                                    ancestry_labs[ind] += 1
+                if ploidy == "diploid":
+                    filtered = ancestry_labs[::2]
+                else:
+                    filtered = ancestry_labs
                 # print(filtered)
                 fields = [str(chrom), str(pos)] + [str(i) for i in filtered]
                 _ = out_file.write("\t".join(fields) + "\n")
@@ -109,13 +118,14 @@ def find_ancestry(hap_dict, input_vcf, output_txt) -> None:
 parser = argparse.ArgumentParser("Process input")
 parser.add_argument("-i", "--input", help = "input vcf file", type = str, required = True)
 parser.add_argument("-b", "--bed", help = "input bed file with introgressed regions", type = str, required = True)
+parser.add_argument("-p", "--ploidy", help = "ploidy of the introgressed fragments", type = str, required = True)
 parser.add_argument("-o", "--output", help = "output text file", type = str, default = "output_ancestry.txt")
 
 args = parser.parse_args()
 input_vcf = args.input
 input_bed = args.bed
 output_txt = args.output
-
+ploidy = args.ploidy
 
 if __name__ == "__main__":
 
@@ -126,4 +136,4 @@ if __name__ == "__main__":
     hap_dict = read_bedfile(input_bed)
     print("Hap dict created")
     #print(hap_dict)
-    find_ancestry(hap_dict, input_vcf, output_txt)
+    find_ancestry(hap_dict, input_vcf, output_txt, ploidy)
