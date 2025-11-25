@@ -6,7 +6,8 @@ import numpy as np
 from collections import deque
 import time
 import argparse
-
+import os
+import shutil
 
 # thanks chat gpt, this is a faster way to do many covariances at once
 # i confirmed it gives the same results as looping through each row
@@ -44,8 +45,8 @@ def compute_anc_D(input_file, my_min, my_max): # output_file,
             count += 1
             # if count >= 100000:
             #     break
-            if count % 200000 == 0:
-                print(f"On line {count}, with {comps} comparisons made so far and current D: {D_sum / comps if comps > 0 else 0}")
+            # if count % 200000 == 0:
+            #     print(f"On line {count}, with {comps} comparisons made so far and current D: {D_sum / comps if comps > 0 else 0}")
             fields = line.strip().split("\t")
             chrom = fields[0]
             pos = int(fields[1])
@@ -105,19 +106,30 @@ if __name__ == "__main__":
     # output_file = "test_covariance.txt"
     # int_path = "testing/simulate_papuans/intermediate_covs_16"
 
-    with open(output_file, "w") as fo:
+    tmp_dir = f"/tmp/{os.environ.get('USER')}/myjob_tmp"
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp_file = os.path.join(tmp_dir, "output.tmp")
+    tmp_file = os.path.join(tmp_dir, f"{os.path.basename(output_file)}.{os.getpid()}.tmp")
+
+
+    with open(tmp_file, "w") as fo:
         for my_min in range(10000, 1000000, 1000):
             
             #int_out = f"{int_path}_{my_min}.txt"
             my_max = my_min + 1000
-            print("NEXT!!!")
-            print(f"Calculating D for min {my_min} and max {my_max}")
+            #print("NEXT!!!")
+            #print(f"Calculating D for min {my_min} and max {my_max}")
             start = time.time()
             D_sum, comps, pos = compute_anc_D(input_file, my_min, my_max) # int_out,
             D = D_sum / comps
             end = time.time()
-            print("COMPLETE")
-            print(f"Elapsed time: {end - start:.2f} seconds")
-            print(f"{my_min}\t{my_max}\t{D}\t{D_sum}\t{comps}\t{pos}\n")
+            #print("COMPLETE")
+                        # print occasionally, not every iteration
+            if my_min % 10000 == 0:
+                print(f"Elapsed: {end - start:.2f}s for {my_min}-{my_max}", flush=True)
+
+            #print(f"{my_min}\t{my_max}\t{D}\t{D_sum}\t{comps}\t{pos}\n")
             fo.write(f"{my_min}\t{my_max}\t{D}\t{D_sum}\t{comps}\t{pos}\n")
             fo.flush()
+    
+    shutil.move(tmp_file, output_file)
