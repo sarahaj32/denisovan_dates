@@ -1,46 +1,48 @@
 wildcard_constraints:
     rep="\d+",
     nafr="\d+",
-    method="(simIntro|hmmix.100|hmmix.500|hmmix.200)",
+
+chroms = 21
+
+def get_ploidy(wildcards):
+    if wildcards.frag_source == "ibdmix":
+        return "haploid"
+    else:
+        return "diploid"
 
 ##### CHECK_mutSamps #####
 # can now add in laurits' exact simulations
-rule sims_all:
-    input:
-        # expand("simdat/{sim}_{seed}/{archaic}/fragments/{sim}_simIntro_{rep}.bed", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple", "denisovanNeanderthal_Dlow", "denisovan_simple", "neanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
-        # expand("simdat/{sim}_{seed}/archaic_0.8/{archaic}/fragments/{sim}_hmmix.200_mostLikely_{rep}.bed", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple", "denisovanNeanderthal_Dlow", "denisovan_simple", "neanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
-        # expand("simdat/{sim}_{seed}/archaic_0.8/{archaic}/fragments/{sim}_hmmix.200_ND_{rep}.bed", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple", "denisovanNeanderthal_Dlow", "denisovan_simple", "neanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
-        # expand("simdat/{sim}_{seed}/ibdmix/fragments/{sim}_ibdmix_{archaic}_{rep}.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple", "denisovanNeanderthal_Dlow", "denisovan_simple", "neanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"})
-        # check simulations
-        # expand("simdat/{sim}_{seed}/clean/{sim}_sim_{rep}.vcf", rep = 10, sim = ["denisovan_simple", "denisovanNeanderthal_simple"], seed = [1,2,3]),
-        # expand("simdat/{sim}_{seed}/{archaic}/fragments/{sim}_simIntro_{rep}.bed", rep = 10, sim = ["denisovan_simple", "denisovanNeanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
-        # expand("simdat/{sim}_{seed}/hmmix/decoded/decoded.{nafr}.NAMH_{ind}.hap{hap}.txt", ind = list(range(1,21)), hap = [1,2], sim = ["denisovan_simple", "denisovanNeanderthal_simple"], seed = [1,2,3], nafr = [200]),
-        # expand("simdat/{sim}_{seed}/archaic_0.8/NEA/fragments/{sim}_hmmix.{nafr}_mostLikely_{rep}.bed", rep = 10, sim = ["denisovan_simple", "denisovanNeanderthal_simple"], seed = [1,2,3], nafr = [200]),
-        expand("simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_{frag_source}_{rep}.bed", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovanNeanderthal_simple", "denisovanNeanderthal_Dlow", "denisovanNeanderthal_closeDiv", "denisovanNeanderthal_Nlow"], seed = [1,2,3], frag_source = ["hmmix.200Afr.mostLikely", "ibdmix", "simIntro"], nMH = [20, 100], archaic = {"DEN", "NEA"}), # 
-    #     expand("simdat/{sim}_{seed}/DEN/curve/results/{sim}_{frag_source}_{nafr}Afr_ingroup_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovan_early", "denisovan_late", "denisovan_low"], seed = [1,2,3], nafr = [200], frag_source = ["simIntro", "hmmix.200"]),
-    #     #expand("simdat/{sim}_{seed}/DEN/curve/results/{sim}_hmmix.200_{nafr}Afr_ingroup_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovan_early", "denisovan_late", "denisovan_low"], seed = [1,2,3], nafr = [100, 200]),
-    #     expand("simdat/{sim}_{seed}/DEN/curve/results/{sim}_{frag_source}_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovan_early", "denisovan_late", "denisovan_low"], frag_source = ["simIntro", "hmmix.200"], seed = [1,2,3]),
-    #     expand("simdat/{sim}_{seed}/DEN/fragments/{sim}_simIntro_{rep}.bed", rep = list(range(1,21)), sim = ["denisovan_LS_ice", "denisovan_LS_pap"], seed = [1]), # increase to 500???? , "hmmix_LS" , "denisovan_simpleLS" "denisovan_smallAfr", "denisovan_bigNonAfr",
-    #     expand("simdat/{sim}_{seed}/DEN/fragments/{sim}_hmmix.{nafr}_{rep}.bed", rep = list(range(1,21)), sim = ["denisovan_LS_ice", "denisovan_LS_pap", "denisovan_simple"], nafr = [100, 200], seed = [1]), # increase to 500???? , "hmmix_LS" , "denisovan_simpleLS" "denisovan_smallAfr", "denisovan_bigNonAfr",
-        # add on neanderthal introgression, and labelling of fragments
-        #expand("simdat/denisovanNeanderthal_simple_{seed}/eig/denisovanNeanderthal_simple_sim_allChr.snp", seed = [1,2,3]),
-        # denisovan and Neanderthal annotations and inferences:
-        # expand("simdat/{sim}_{seed}/archaic_0.8/fragments/{sim}_hmmix.200_{rep}.bed", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], method = ["simIntro"], nafr = [200]),
-        # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], frag_source = ["simIntro", "hmmix.200_ND", "hmmix.200_mostLikely"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple", "denisovan_simple", "denisovanNeanderthal_Dlow"]),
-        # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_ds200k_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], frag_source = ["simIntro", "hmmix.200_ND", "hmmix.200_mostLikely"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple", "denisovan_simple", "denisovanNeanderthal_Dlow"]),
-
-        # expand("simdat/{sim}_{seed}/archaics/curve/results/{sim}_annotatedArchaics_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3]),
-        # expand("simdat/{sim}_{seed}/{archaic}/curve/results/fragments/{sim}_simIntro_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
-        # expand("simdat/{sim}_{seed}/archaic_0.8/curve/results/fragments/{sim}_hmmix.200_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], method = ["simIntro"], nafr = [200]),
-        # expand("simdat/{sim}_{seed}/{archaic}/curve/results/fragments/{sim}_hmmix.200_mostLikely_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
-
-        # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_{nafr}Afr_ingroup_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], nafr = [200], frag_source = ["simIntro", "hmmix.200"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple"]),
-        # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], nafr = [200], frag_source = ["simIntro", "hmmix.200"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple"])
+# rule sims_all:
+#     input:
+#         expand("simdat/{sim}_{seed}/summary_results/{sim}_20NAMH_simIntro_haploid_ancestry_summary.txt", seed = [config["seed"]], sim = [config["sim"]]),
+#         expand("simdat/{sim}_{seed}/summary_results/{sim}_{nMH}NAMH_{frag_source}_{archaic}_performance.txt", seed = [config["seed"]], nMH = [20,100], frag_source = ["hmmix.0.8.200Afr.fullArchaic.mostLikely", "hmmix.0.9.200Afr.200kArchaic.mostLikely", "hmmix.0.9.200Afr.200kArchaic.mostLikely", "ibdmix", "hmmix.0.8.200Afr.200kArchaic.mostLikely"], sim = [config["sim"]], archaic = ["DEN", "NEA"]),
+#         # get the ancestry matrix and dates
+#         expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{nMH}NAMH_{frag_source}_{rep}_D.txt", seed = [config["seed"]], nMH = [20,100], frag_source = ["hmmix.0.8.200Afr.fullArchaic.mostLikely", "hmmix.0.9.200Afr.200kArchaic.mostLikely", "hmmix.0.9.200Afr.200kArchaic.mostLikely", "ibdmix", "hmmix.0.8.200Afr.200kArchaic.mostLikely"], sim = [config["sim"]], archaic = ["DEN", "NEA"], rep = list(range(1,chroms))),
+#         expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{nMH}NAMH_{frag_source}_ds200k_{rep}_D.txt", seed = [config["seed"]], nMH = [20,100], frag_source = ["hmmix.0.8.200Afr.fullArchaic.mostLikely", "hmmix.0.9.200Afr.200kArchaic.mostLikely", "hmmix.0.9.200Afr.200kArchaic.mostLikely", "ibdmix", "hmmix.0.8.200Afr.200kArchaic.mostLikely"], sim = [config["sim"]], archaic = ["DEN", "NEA"], rep = list(range(1,chroms))),
         
-    output:
-        "logs/sims_generated.txt"
-    shell:
-        "echo 'all done' > {output}"
+        
+#         #expand("simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_{frag_source}_{rep}.bed", rep = list(range(1,chroms)), sim = ["denisovan_simple"], seed = [1], frag_source = ["hmmix.200Afr.200kArchaic.mostLikely"], nMH = [100], archaic = {"DEN", "NEA"}), #  , "denisovanNeanderthal_simple", "denisovanNeanderthal_Dlow", "denisovanNeanderthal_closeDiv", "denisovanNeanderthal_Nlow"
+
+#    #     expand("simdat/{sim}_{seed}/DEN/curve/results/{sim}_{frag_source}_{nafr}Afr_ingroup_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovan_early", "denisovan_late", "denisovan_low"], seed = [1,2,3], nafr = [200], frag_source = ["simIntro", "hmmix.200"]),
+#     #     #expand("simdat/{sim}_{seed}/DEN/curve/results/{sim}_hmmix.200_{nafr}Afr_ingroup_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovan_early", "denisovan_late", "denisovan_low"], seed = [1,2,3], nafr = [100, 200]),
+#     #     expand("simdat/{sim}_{seed}/DEN/curve/results/{sim}_{frag_source}_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovan_simple", "denisovan_early", "denisovan_late", "denisovan_low"], frag_source = ["simIntro", "hmmix.200"], seed = [1,2,3]),
+#     #     expand("simdat/{sim}_{seed}/DEN/fragments/{sim}_simIntro_{rep}.bed", rep = list(range(1,21)), sim = ["denisovan_LS_ice", "denisovan_LS_pap"], seed = [1]), # increase to 500???? , "hmmix_LS" , "denisovan_simpleLS" "denisovan_smallAfr", "denisovan_bigNonAfr",
+#     #     expand("simdat/{sim}_{seed}/DEN/fragments/{sim}_hmmix.{nafr}_{rep}.bed", rep = list(range(1,21)), sim = ["denisovan_LS_ice", "denisovan_LS_pap", "denisovan_simple"], nafr = [100, 200], seed = [1]), # increase to 500???? , "hmmix_LS" , "denisovan_simpleLS" "denisovan_smallAfr", "denisovan_bigNonAfr",
+#         # add on neanderthal introgression, and labelling of fragments
+#         #expand("simdat/denisovanNeanderthal_simple_{seed}/eig/denisovanNeanderthal_simple_sim_allChr.snp", seed = [1,2,3]),
+#         # denisovan and Neanderthal annotations and inferences:
+#         # expand("simdat/{sim}_{seed}/archaic_0.8/fragments/{sim}_hmmix.200_{rep}.bed", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], method = ["simIntro"], nafr = [200]),
+#         # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], frag_source = ["simIntro", "hmmix.200_ND", "hmmix.200_mostLikely"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple", "denisovan_simple", "denisovanNeanderthal_Dlow"]),
+#         # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_ds200k_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], frag_source = ["simIntro", "hmmix.200_ND", "hmmix.200_mostLikely"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple", "denisovan_simple", "denisovanNeanderthal_Dlow"]),
+
+#         # expand("simdat/{sim}_{seed}/archaics/curve/results/{sim}_annotatedArchaics_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3]),
+#         # expand("simdat/{sim}_{seed}/{archaic}/curve/results/fragments/{sim}_simIntro_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
+#         # expand("simdat/{sim}_{seed}/archaic_0.8/curve/results/fragments/{sim}_hmmix.200_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], method = ["simIntro"], nafr = [200]),
+#         # expand("simdat/{sim}_{seed}/{archaic}/curve/results/fragments/{sim}_hmmix.200_mostLikely_{rep}_D.txt", rep = list(range(1,21)), sim = ["denisovanNeanderthal_simple"], seed = [1,2,3], archaic = {"DEN", "NEA"}),
+
+#         # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_{nafr}Afr_ingroup_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], nafr = [200], frag_source = ["simIntro", "hmmix.200"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple"]),
+#         # expand("simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{frag_source}_{rep}_D.txt", rep = list(range(1,21)), seed = [1,2,3], nafr = [200], frag_source = ["simIntro", "hmmix.200"], archaic = ["DEN", "NEA"], sim = ["denisovanNeanderthal_simple"])
+        
 
 # I can use this as the simulation map:
 # /global/scratch/p2p3/pl1_moorjani/SHARED_LAB/DATASETS/hg19/resources/genetic_maps_corrections/hg19/Shared_AfAmMap/Europeanized_AA_map.txt
@@ -129,13 +131,13 @@ rule extract_archaics:
     input: 
         "simdat/{sim}_{seed}/clean/{sim}_sim_{rep}.vcf"
     output:
-        full = "simdat/{sim}_{seed}/archaics/{sim}_sim_full_{rep}.vcf",
-        mask = "simdat/{sim}_{seed}/archaics/{sim}_sim_200k_{rep}.txt",
-        vcf = "simdat/{sim}_{seed}/archaics/{sim}_sim_200k_{rep}.vcf",
-        gz = "simdat/{sim}_{seed}/archaics/{sim}_sim_200k_{rep}.vcf.gz",
-        index = "simdat/{sim}_{seed}/archaics/{sim}_sim_200k_{rep}.vcf.gz.csi",
-        full_gz = "simdat/{sim}_{seed}/archaics/{sim}_sim_full_{rep}.vcf.gz",
-        full_index = "simdat/{sim}_{seed}/archaics/{sim}_sim_full_{rep}.vcf.gz.csi",
+        full = "simdat/{sim}_{seed}/archaics/{sim}_sim_fullArchaic_{rep}.vcf",
+        mask = "simdat/{sim}_{seed}/archaics/{sim}_sim_200kArchaic_{rep}.txt",
+        vcf = "simdat/{sim}_{seed}/archaics/{sim}_sim_200kArchaic_{rep}.vcf",
+        gz = "simdat/{sim}_{seed}/archaics/{sim}_sim_200kArchaic_{rep}.vcf.gz",
+        index = "simdat/{sim}_{seed}/archaics/{sim}_sim_200kArchaic_{rep}.vcf.gz.csi",
+        full_gz = "simdat/{sim}_{seed}/archaics/{sim}_sim_fullArchaic_{rep}.vcf.gz",
+        full_index = "simdat/{sim}_{seed}/archaics/{sim}_sim_fullArchaic_{rep}.vcf.gz.csi",
     shell: # Need to assign nucleotides to the archaic mutations
         """
         bcftools view -c1 -s AltaiNeandertal,Vindija33.19,Chagyrskaya-Phalanx,Denisova {input} -o {output.full} # | awk 'BEGIN{{OFS="\t"}} /^#/ {{print; next}} {{ $4="A"; $5="T"; print }}'
@@ -190,6 +192,8 @@ rule run_ibdmix:
     shell:
         "ibdmix -g {input} -o {output} --write-lods --write-snps"
 
+# add on the suggested filters
+# additionally reformat so that the first column "hap" is consistent with hmmix
 rule filter_ibdmix:
     input:
         "simdat/{sim}_{seed}/ibdmix/output/{sim}_{nMH}NAMH_ibdmix_{archaic}_{rep}.txt"
@@ -197,31 +201,20 @@ rule filter_ibdmix:
         "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_ibdmix_{rep}.bed", 
     shell:
         """
-        awk '{{len=$4-$3; print $0"\t"len}}' {input} | awk '$5>4' | awk '$8>50000' > {output}
+        awk '{{len=$4-$3; print $0"\t"len}}' {input} | \
+        awk 'BEGIN{{OFS="\t"}} NR==1 {{print "hap", $0; next}} {{split($1,a,"_"); print a[2]-1, $0}}' | \
+        awk '$6>4 || $3 == "chrom"' | {{ head -n1; tail -n +2 | sort -k1,2n -k4,4n ; }} > {output}
         """
 
 rule annotate_archaic_variants:
     input:
-        archaics="simdat/{sim}_{seed}/archaics/{sim}_sim_full_{rep}.vcf",
+        archaics="simdat/{sim}_{seed}/archaics/{sim}_sim_{archaic_ds}Archaic_{rep}.vcf",
         script="add_annotations_to_archaic_observations.py"
     output:
-        annotated="simdat/{sim}_{seed}/archaics/{sim}_full_annotatedArchaics_{rep}.txt"
+        annotated="simdat/{sim}_{seed}/archaics/{sim}_{archaic_ds}_annotatedArchaics_{rep}.txt"
+        
     shell:
         "python {input.script} -i {input.archaics} -o {output.annotated}"
-
-
-# we want to get a more reasonable number of positions, equivalent to the strict mask (there are variants 61,000,000 in 1000G strict mask)
-# rule downsample_to_strict_mask:
-#     input:
-#         "simdat/{sim}_{seed}/clean/{sim}_sim_{rep}.vcf"
-#     output:
-#         vcf = "simdat/{sim}_{seed}/masked/{sim}_sim_{rep}.vcf"
-#         pos = temp("simdat/{sim}_{seed}/masked/{sim}_sim_{rep}_maskPos.txt")
-#     shell:
-#         """
-#         bcftools view -H {input} | cut -f1,2 | shuf -n 6750 | sort -nk2 > {output.pos}
-#         bcftools view -T {output.pos} {input} -o {output.vcf}
-#         """
 
 # we only care about positions variable within our populations of interest (and individuals of interest)      
 rule remove_nonvariable_sites:
@@ -281,7 +274,7 @@ rule find_intro_frags:
         time='6:00:00'
     shell:
         """
-        python {input.script} -f {input.tree} -b {output.bed} -s {wildcards.archaic} -t OOA -c {wildcards.rep} -n 20
+        python {input.script} -f {input.tree} -b {output.bed} -s {wildcards.archaic} -t OOA -c {wildcards.rep} -n {wildcards.nMH}
         """
 
 #### A set of HMMix rules to call introgressed fragments ####
@@ -307,19 +300,21 @@ rule create_outgroup:
 rule create_ingroup:
     input:
         # need to update the VCFs so that they have an actual reference and alternative allele
-        vcfs = expand("simdat/{{sim}}_{{seed}}/MH{{nMH}}_variable/{{sim}}_sim_{rep}.vcf", rep = list(range(1,21))),
+        vcfs = expand("simdat/{{sim}}_{{seed}}/clean/{{sim}}_sim_{rep}.vcf", rep = list(range(1,21))),
         outgroup = "simdat/{sim}_{seed}/hmmix/outgroup/outgroup_{nafr}Afr.txt"
     output:
-        "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}Afr.{nMH}NAMH_{ind}.txt"
+        "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}Afr_{ind}.txt"
     params:
         ingroup_path = "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}",
-        vcfs = "simdat/{sim}_{seed}/MH{nMH}_variable/{sim}_sim_*.vcf",
+        vcfs = "simdat/{sim}_{seed}/clean/{sim}_sim_*.vcf",
         name = "NAMH_{ind}"
     shell:
         """
         rm -f {output}
+        echo "DELETED, MOVING FORWARD"
         for file in {input.vcfs}; 
         do
+            echo "PROCESSING FILE"
             echo $file
             bcftools view -s {params.name} -v snps -c 1 -T ^{input.outgroup} $file | bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t[%GT]\n' |
             awk 'BEGIN{{OFS="\t"}}
@@ -335,22 +330,22 @@ rule create_ingroup:
 
 rule train:
     input:
-        obs = "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}Afr.{nMH}NAMH_{ind}.txt"
+        obs = "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}Afr_{ind}.txt"
     output:
-        "simdat/{sim}_{seed}/hmmix/trained/trained.{nafr}Afr.{nMH}NAMH_{ind}.json"      
+        "simdat/{sim}_{seed}/hmmix/trained/trained.{nafr}Afr_{ind}.json"      
     shell:
         "hmmix train -obs={input.obs} -out={output} -haploid"
 
 rule decode:
     input:
-        obs = "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}Afr.{nMH}NAMH_{ind}.txt",
-        trained = "simdat/{sim}_{seed}/hmmix/trained/trained.{nafr}Afr.{nMH}NAMH_{ind}.json",
-        admixpop = expand("simdat/{{sim}}_{{seed}}/archaics/{{sim}}_sim_full_{rep}.vcf.gz", rep = list(range(1,21)))
+        obs = "simdat/{sim}_{seed}/hmmix/obs/obs.{nafr}Afr_{ind}.txt",
+        trained = "simdat/{sim}_{seed}/hmmix/trained/trained.{nafr}Afr_{ind}.json",
+        admixpop = expand("simdat/{{sim}}_{{seed}}/archaics/{{sim}}_sim_{{archaic_ds}}Archaic_{rep}.vcf.gz", rep = list(range(1,21)))
     output:
-        expand("simdat/{{sim}}_{{seed}}/hmmix/decoded/decoded.{{nafr}}Afr.{{nMH}}NAMH_{{ind}}.hap{hap}.txt", hap = [1,2])
+        expand("simdat/{{sim}}_{{seed}}/hmmix/decoded/decoded.{{nafr}}Afr_{{archaic_ds}}Archaic_{{ind}}.hap{hap}.txt", hap = [1,2])
     params:
-        out_path = "simdat/{sim}_{seed}/hmmix/decoded/decoded.{nafr}Afr.{nMH}NAMH_{ind}",
-        admixpop = "simdat/{sim}_{seed}/archaics/{sim}_sim_full_*.vcf.gz"
+        out_path = "simdat/{sim}_{seed}/hmmix/decoded/decoded.{nafr}Afr_{archaic_ds}Archaic_{ind}",
+        admixpop = "simdat/{sim}_{seed}/archaics/{sim}_sim_{archaic_ds}Archaic_*.vcf.gz"
     shell:
         "hmmix decode -obs={input.obs} -param={input.trained} -haploid -out={params.out_path} -admixpop={params.admixpop} -extrainfo"
 
@@ -358,23 +353,26 @@ rule decode:
 # gives us a file of fragments/chromosome
 rule collate_frags:
     input:
-        expand("simdat/{{sim}}_{{seed}}/hmmix/decoded/decoded.{{nafr}}Afr.{{nMH}}NAMH_{ind}.hap{hap}.txt", ind = list(range(1,21)), hap = [1,2])
+        lambda wildcards: expand(
+        "simdat/{{sim}}_{{seed}}/hmmix/decoded/decoded.{{nafr}}Afr_{{archaic_ds}}Archaic_{ind}.hap{hap}.txt",
+        ind=range(1, int(wildcards.nMH) +1),
+        hap=[1, 2])
     output:
-        tmp = temp("simdat/{sim}_{seed}/archaic_{threshold}/fragments/{sim}_hmmix.{nafr}Afr.{nMH}NAMH_all.bed"),
-        chrs = expand("simdat/{{sim}}_{{seed}}/archaic_{{threshold}}/fragments/{{sim}}_hmmix.{{nafr}}Afr.{{nMH}}NAMH_{rep}.bed", rep = list(range(1,21)))
+        tmp = temp("simdat/{sim}_{seed}/archaic_{threshold}/fragments/{sim}_hmmix.{nafr}Afr.{archaic_ds}Archaic.{nMH}NAMH_all.bed"),
+        chrs = expand("simdat/{{sim}}_{{seed}}/archaic_{{threshold}}/fragments/{{sim}}_{{archaic_ds}}Archaic_hmmix.{{nafr}}Afr.{{nMH}}NAMH_{rep}.bed", rep = list(range(1,21)))
     shell:
         """
         rm -f {output.tmp}
         hap_count=0
-        for f in {input};
-        do
-        echo $f
-        id=$(basename "$f" | cut -d. -f2) 
-        echo $id
-        hap=$(basename "$f" | cut -d. -f3 | sed 's/\.txt//')  # hap2
-        echo $hap
-        grep 'Archaic' "$f" | awk '($6>={wildcards.threshold})' | awk -v id="$id" -v hap="$hap" -v count="$hap_count" 'BEGIN {{OFS="\t"}} {{print count, $0, id, hap}}' >> {output.tmp}
-        hap_count=$((hap_count+1))
+        for f in {input};  # only use the first nMH individuals
+            do
+            echo $f
+            id=$(basename "$f" | cut -d. -f2) 
+            echo $id
+            hap=$(basename "$f" | cut -d. -f3 | sed 's/\.txt//')  # hap2
+            echo $hap
+            grep 'Archaic' "$f" | awk '($6>={wildcards.threshold})' | awk -v id="$id" -v hap="$hap" -v count="$hap_count" 'BEGIN {{OFS="\t"}} {{print count, $0, id, hap}}' >> {output.tmp}
+            hap_count=$((hap_count+1))
         done
         
         for out in {output.chrs}; do
@@ -387,23 +385,23 @@ rule collate_frags:
 
 rule annotate_frags:
     input:
-        frags = "simdat/{sim}_{seed}/archaic_0.8/fragments/{sim}_hmmix.{nafr}Afr.{nMH}NAMH_{rep}.bed",
+        frags = "simdat/{sim}_{seed}/archaic_{threshold}/fragments/{sim}_{archaic_ds}Archaic_hmmix.{nafr}Afr.{nMH}NAMH_{rep}.bed",
         annotations = "simdat/{sim}_{seed}/archaics/{sim}_full_annotatedArchaics_{rep}.txt",
         script = "helper_scripts/annotate_frags_archaics.py"
     output:
-        "simdat/{sim}_{seed}/archaic_0.8/fragments_anno/{sim}_hmmix.{nafr}Afr.{nMH}NAMH_annotated_{rep}.bed",
+        "simdat/{sim}_{seed}/archaic_{threshold}/fragments_anno/{sim}_hmmix.{nafr}Afr.{archaic_ds}Archaic.{nMH}NAMH_annotated_{rep}.bed",
     shell:
         "python {input.script} -b {input.frags} -i {input.annotations} -o {output}"
 
 # need to use this to collage fragments if NEA is included
 rule classify_archaic_fragments:
     input:
-        bed="simdat/{sim}_{seed}/archaic_0.8/fragments_anno/{sim}_hmmix.{nafr}Afr.{nMH}NAMH_annotated_{rep}.bed",
+        bed="simdat/{sim}_{seed}/archaic_{threshold}/fragments_anno/{sim}_hmmix.{nafr}Afr.{archaic_ds}Archaic.{nMH}NAMH_annotated_{rep}.bed",
     output:
-        den_full="simdat/{sim}_{seed}/DEN/fragments/{sim}_{nMH}NAMH_hmmix.{nafr}Afr.mostLikely_{rep}.bed",
-        nea_full="simdat/{sim}_{seed}/NEA/fragments/{sim}_{nMH}NAMH_hmmix.{nafr}Afr.mostLikely_{rep}.bed",
-        ND01_full="simdat/{sim}_{seed}/DEN/fragments/{sim}_{nMH}NAMH_hmmix.{nafr}Afr.ND_{rep}.bed",
-        ND10_full="simdat/{sim}_{seed}/NEA/fragments/{sim}_{nMH}NAMH_hmmix.{nafr}Afr.ND_{rep}.bed",
+        den_full="simdat/{sim}_{seed}/DEN/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.mostLikely_{rep}.bed",
+        nea_full="simdat/{sim}_{seed}/NEA/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.mostLikely_{rep}.bed",
+        ND01_full="simdat/{sim}_{seed}/DEN/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.ND_{rep}.bed",
+        ND10_full="simdat/{sim}_{seed}/NEA/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.ND_{rep}.bed",
     shell:
         """
         nea=$(head -1 {input.bed} | tr '\t' '\n' | grep -n -x "nea_overlap" | cut -d: -f1)
@@ -422,39 +420,77 @@ rule create_ancestry_matrix:
         bed = "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_{frag_source}_{rep}.bed", 
         vcf = "simdat/{sim}_{seed}/MH{nMH}_variable/{sim}_sim_{rep}.vcf",
         script = "helper_scripts/create_ancestry_eig.py"
+    params:
+        ploidy = get_ploidy
     output:
-        "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{nMH}NAMH_{frag_source}_{rep}.anc"
+        "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{nMH}NAMH_{frag_source}_all_{rep}.anc"
     shell:
-        "python {input.script} -b {input.bed} -i {input.vcf} -o {output}"
+        "python {input.script} -b {input.bed} -i {input.vcf} -o {output} -p {params.ploidy}"
 
-rule create_ancestry_matrix_ingroup: # this is for hmmix or true ancestry, using positions after removing an outgroup of nafr Africans
-    input:
-        bed = "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{frag_source}_{rep}.bed",
-        vcf = "simdat/{sim}_{seed}/MH{nMH}_variable/{sim}_sim_{rep}_{naf{nMH}NAMH_r}Afr_ingroup.vcf",
-        script = "helper_scripts/create_ancestry_eig.py"
-    output:
-        "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{frag_source}_{nafr}Afr_ingroup_{rep}.anc"
-    shell:
-        "python {input.script} -b {input.bed} -i {input.vcf} -o {output}"
+# rule create_ancestry_matrix_ingroup: # this is for hmmix or true ancestry, using positions after removing an outgroup of nafr Africans
+#     input:
+#         bed = "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{frag_source}_{rep}.bed",
+#         vcf = "simdat/{sim}_{seed}/MH{nMH}_variable/{sim}_sim_{rep}_{naf}{nMH}NAMHAfr_ingroup.vcf",
+#         script = "helper_scripts/create_ancestry_eig.py"
+#     output:
+#         "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{frag_source}_{nafr}Afr_ingroup_{rep}.anc"
+#     shell:
+#         "python {input.script} -b {input.bed} -i {input.vcf} -o {output}"
 
 rule create_ancestry_matrix_downsampled: # this is for hmmix or true ancestry, using positions after removing an outgroup of nafr Africans
     input:
-        bed = "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{frag_source}_{rep}.bed",
+        bed = "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_{frag_source}_{rep}.bed",
         vcf = "simdat/{sim}_{seed}/MH{nMH}_variable/{sim}_sim_{rep}_downsampled.vcf",
         script = "helper_scripts/create_ancestry_eig.py"
+    params:
+        ploidy = get_ploidy
     output:
-        "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{frag_source}_ds200k_{rep}.anc"
+        "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{nMH}NAMH_{frag_source}_ds200k_{rep}.anc"
     shell:
-        "python {input.script} -b {input.bed} -i {input.vcf} -o {output}"
+        "python {input.script} -b {input.bed} -i {input.vcf} -o {output} -p {params.ploidy}"
 
 # this takes ~24 hrs 
 rule calculate_D:
     input:
-        anc = "simdat/{sim}_{seed}/{archaic}/curve/fragments/{name}_{rep}.anc",
+        anc = "simdat/{sim}_{seed}/{archaic}/curve/fragments/{sim}_{nMH}NAMH_{frag_source}_{pos}_{rep}.anc",
         script = "helper_scripts/calculate_covariances.py"
     output:
-        "simdat/{sim}_{seed}/{archaic}/curve/results/{name}_{rep}_D.txt"
+        "simdat/{sim}_{seed}/{archaic}/curve/results/{sim}_{nMH}NAMH_{frag_source}_{pos}_{rep}_D.txt"
+
+    log: "logs/D_calculation_{sim}_{seed}_{archaic}_{nMH}NAMH_{frag_source}_{pos}_{rep}.log"
     resources:
         time='30:00:00'
     shell:
-        "python {input.script} -i {input.anc} -o {output}"
+        "python {input.script} -i {input.anc} -o {output} > {log} 2>&1 "
+
+
+# get summary statistics
+rule summarize_true_ancestry:
+    input:
+        beds = expand("simdat/{{sim}}_{{seed}}/{archaic}/fragments/{{sim}}_{{nMH}}NAMH_simIntro_{rep}.bed", archaic = ["DEN", "NEA"], rep = list(range(1,chroms))),
+        script = "helper_scripts/true_ancestry_summary.R"   
+    output:
+        hap = "simdat/{sim}_{seed}/summary_results/{sim}_{nMH}NAMH_simIntro_haploid_ancestry_summary.txt",
+        dip = "simdat/{sim}_{seed}/summary_results/{sim}_{nMH}NAMH_simIntro_diploid_ancestry_summary.txt"
+    shell:
+        "Rscript {input.script} {input.beds[0]} {output.hap} {output.dip}"
+
+
+rule summarize_inferred_performance:
+    input:
+        inf = expand("simdat/{{sim}}_{{seed}}/{{archaic}}/fragments/{{sim}}_{{nMH}}NAMH_{{frag_source}}_{rep}.bed", rep = list(range(1,chroms))),
+        truth = expand("simdat/{{sim}}_{{seed}}/{{archaic}}/fragments/{{sim}}_{{nMH}}NAMH_simIntro_{rep}.bed", rep = list(range(1,chroms))),
+        script = "helper_scripts/get_performance_results.R"   
+    output:
+        "simdat/{sim}_{seed}/summary_results/{sim}_{nMH}NAMH_{frag_source}_{archaic}_performance.txt",
+    wildcard_constraints:
+        frag_source = ".*(ibdmix|hmmix)*."
+    params:
+        ploidy = get_ploidy
+    shell:
+        """
+        Rscript {input.script} {input.truth[0]} {input.inf[0]} {output} {params.ploidy}
+        """
+       #         if [ "{wildcards.frag_source}" = "ibdmix" ]; then ploidy="haploid"; else ploidy="diploid"; fi
+        # echo "{widlcards.frag_source}"
+        # echo $ploidy 
