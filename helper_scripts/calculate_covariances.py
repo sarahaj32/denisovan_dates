@@ -6,8 +6,8 @@ import numpy as np
 from collections import deque
 import time
 import argparse
-import os
-import shutil
+# import os
+# import shutil
 
 # thanks chat gpt, this is a faster way to do many covariances at once
 # i confirmed it gives the same results as looping through each row
@@ -106,13 +106,13 @@ if __name__ == "__main__":
     # output_file = "test_covariance.txt"
     # int_path = "testing/simulate_papuans/intermediate_covs_16"
 
-    tmp_dir = f"/tmp/{os.environ.get('USER')}/myjob_tmp"
-    os.makedirs(tmp_dir, exist_ok=True)
-    tmp_file = os.path.join(tmp_dir, "output.tmp")
-    tmp_file = os.path.join(tmp_dir, f"{os.path.basename(output_file)}.{os.getpid()}.tmp")
+    # tmp_dir = f"/tmp/{os.environ.get('USER')}/myjob_tmp"
+    # os.makedirs(tmp_dir, exist_ok=True)
+    # tmp_file = os.path.join(tmp_dir, "output.tmp")
+    # tmp_file = os.path.join(tmp_dir, f"{os.path.basename(output_file)}.{os.getpid()}.tmp")
 
 
-    with open(tmp_file, "w") as fo:
+    with open(output_file, "w") as fo:
         for my_min in range(10000, 1000000, 1000):
             
             #int_out = f"{int_path}_{my_min}.txt"
@@ -132,4 +132,4 @@ if __name__ == "__main__":
             fo.write(f"{my_min}\t{my_max}\t{D}\t{D_sum}\t{comps}\t{pos}\n")
             fo.flush()
     
-    shutil.move(tmp_file, output_file)
+    #shutil.move(tmp_file, output_file)
