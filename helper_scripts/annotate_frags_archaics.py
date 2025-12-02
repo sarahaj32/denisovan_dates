@@ -42,57 +42,55 @@ def read_in_pos_label(obs, ancestral):
     return(obs_dict)
 
 def annotate_fragments(obsdict, frags, outfile):
-count = 0
-with open(frags, "r") as af, open(outfile, "w") as of:
-    for line in af:
-        count += 1
-        # print out a status update every so often
-        if count % 100000 == 0:
-            print(count)
-        # if count > 200:
-        #     break
-        line = line.strip().split("\t")
-        if "name" in line:
-            variant_idx = line.index("variants")
-            chrom_idx = line.index('chrom')
-            outline = "\t".join(line + ["comp", "nocomp", "ND", "ND10", "ND01", "ND11", "ND00", "nea_overlap", "den_overlap", "nea_affinity", "den_affinity"])
-            print("NAME")
-        elif count == 1:
-            chrom_idx = 1
-            variant_idx = 15
-            outline = "\t".join(line + ["comp", "nocomp", "ND", "ND10", "ND01", "ND11", "ND00", "nea_overlap", "den_overlap", "nea_affinity", "den_affinity"])
-            print("FIRST LINE")
-        else:
-            label_count = {"ND01":0, "ND10":0, "ND11": 0, "ND00": 0, "ND":0, "comp": 0, "nocomp": 0}
-            vars = line[variant_idx].split(sep = ",")
-            chrom = line[chrom_idx]
-            for var in vars:
-                ID = f"{chrom}:{var}"
-                #see if this ID is comparable to archaics
-                if ID in obs_dict: 
-                    ref, alt, anc, label, olabel = obs_dict[ID]
-                    # count at all comparable sites (include multi-allelic for now)
-                    label_count[label] += 1
-                    if label != "ND":
-                        label_count["comp"] += 1
-                    # also get a count of how many are 'comparable'
+    count = 0
+    with open(frags, "r") as af, open(outfile, "w") as of:
+        for line in af:
+            count += 1
+            # print out a status update every so often
+            if count % 100000 == 0:
+                print(count)
+            # if count > 200:
+            #     break
+            line = line.strip().split("\t")
+            if "name" in line:
+                variant_idx = line.index("variants")
+                chrom_idx = line.index('chrom')
+                outline = "\t".join(line + ["comp", "nocomp", "ND", "ND10", "ND01", "ND11", "ND00", "nea_overlap", "den_overlap", "nea_affinity", "den_affinity"])
+                print("NAME")
+            elif count == 1:
+                chrom_idx = 1
+                variant_idx = 15
+                outline = "\t".join(line + ["comp", "nocomp", "ND", "ND10", "ND01", "ND11", "ND00", "nea_overlap", "den_overlap", "nea_affinity", "den_affinity"])
+                print("FIRST LINE")
+            else:
+                label_count = {"ND01":0, "ND10":0, "ND11": 0, "ND00": 0, "ND":0, "comp": 0, "nocomp": 0}
+                vars = line[variant_idx].split(sep = ",")
+                chrom = line[chrom_idx]
+                for var in vars:
+                    ID = f"{chrom}:{var}"
+                    #see if this ID is comparable to archaics
+                    if ID in obs_dict: 
+                        ref, alt, anc, label, olabel = obs_dict[ID]
+                        # count at all comparable sites (include multi-allelic for now)
+                        label_count[label] += 1
+                        if label != "ND":
+                            label_count["comp"] += 1
+                        # also get a count of how many are 'comparable'
+                    else:
+                        label_count["nocomp"] += 1
+                # calculate the number of matches to each archaic, and the overall affinity metric
+                label_count["nea_overlap"] = label_count["ND11"] + label_count["ND10"]
+                label_count["den_overlap"] = label_count["ND11"] + label_count["ND01"]
+                if label_count["nea_overlap"] > 0:
+                    label_count["nea_affinity"] = label_count["nea_overlap"] / label_count["comp"]
                 else:
-                    label_count["nocomp"] += 1
-            # calculate the number of matches to each archaic, and the overall affinity metric
-            label_count["nea_overlap"] = label_count["ND11"] + label_count["ND10"]
-            label_count["den_overlap"] = label_count["ND11"] + label_count["ND01"]
-            if label_count["nea_overlap"] > 0:
-                label_count["nea_affinity"] = label_count["nea_overlap"] / label_count["comp"]
-            else:
-                label_count["nea_affinity"] = 0
-            if label_count["den_overlap"] > 0:
-                label_count["den_affinity"] = label_count["den_overlap"] / label_count["comp"]
-            else:
-                label_count["den_affinity"] = 0
-            outline = "\t".join(line + [str(label_count[i]) for i in ["comp", "nocomp", "ND", "ND10", "ND01", "ND11", "ND00", "nea_overlap", "den_overlap", "nea_affinity", "den_affinity"]])
-        _ = of.write(outline + "\n")
-
-
+                    label_count["nea_affinity"] = 0
+                if label_count["den_overlap"] > 0:
+                    label_count["den_affinity"] = label_count["den_overlap"] / label_count["comp"]
+                else:
+                    label_count["den_affinity"] = 0
+                outline = "\t".join(line + [str(label_count[i]) for i in ["comp", "nocomp", "ND", "ND10", "ND01", "ND11", "ND00", "nea_overlap", "den_overlap", "nea_affinity", "den_affinity"]])
+            _ = of.write(outline + "\n")
                 
                 
 parser = argparse.ArgumentParser()
