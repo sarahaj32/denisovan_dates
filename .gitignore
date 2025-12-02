@@ -9,3 +9,8 @@ simdat/
 .Rhistory
 1000G_observations/
 previous_simdat/
+analysis/hmmix_comps/
+qc_checks/
+testing/
+plots/
+slurm-*.out
