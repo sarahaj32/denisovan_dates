@@ -26,3 +26,4 @@ simulations:
     denisovanNeanderthal_simple_closeDiv: "params/demes/denisovaNeanderthal_simple_closeDiv.yaml" 
     denisovanNeanderthal_simple: "params/demes/denisovaNeanderthal_simple.yaml"
     denisovanNeanderthal_simple_previous: "params/demes/denisovaNeanderthal_simple_previous.yaml"
+  samples_json: "params/samples.json"
