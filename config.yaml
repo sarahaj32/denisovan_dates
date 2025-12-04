@@ -1,0 +1,28 @@
+datasets: 
+  GAv1: 
+    hg38_path: "/global/scratch/p2p3/pl1_moorjani/lauritsskov2/ArchaicSegments/bcffiles/GA100K.{chrom}.bcf" 
+  HGDP: 
+    hg38_path: "/global/scratch/p2p3/pl1_moorjani/SHARED_LAB/DATASETS/hg38/HGDP_WGS/hgdp_wgs.20190516.full.chr{chrom}.vcf.gz" 
+  1000G: 
+    hg38_path: "/global/scratch/collections/genomesdb/open_human_variation/hg38/1000G/1000G_NYGC/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr{chrom}.recalibrated_variants.vcf.gz" 
+    hg19_path: "/global/scratch/p2p3/pl1_moorjani/SHARED_LAB/DATASETS/hg19/1000G/ALL.chr{chrom}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz" 
+  LASIDAD: 
+  hg38_path: "/global/scratch/p2p3/pl1_moorjani/sarahj32/data/LASI_DAD_vflags03/flagged.LASI-DAD-wgs-2766.chr{chrom}.biallelic_VFLAGS03.g.vcf.gz" 
+
+simulations: 
+  demo_yaml: 
+    denisovan_simple: "params/demes/denisovan_simple.yaml" 
+    neanderthal_simple: "params/demes/neanderthal_simple.yaml" 
+    denisovan_late: "params/demes/denisovan_late_admixture.yaml" 
+    denisovan_early: "params/demes/denisovan_early_admixture.yaml" 
+    denisovan_low: "params/demes/denisovan_low_admixture.yaml" 
+    denisovan_smallAfr: "params/demes/denisovan_smallAfr.yaml" 
+    denisovan_bigNonAfr: "params/demes/denisovan_bigNonAfr.yaml" 
+    denisovan_LS_ice: "params/demes/denisovan_LS_ice.yaml" 
+    denisovan_LS_pap: "params/demes/denisovan_LS_pap.yaml" 
+    denisovan_simpleLS: "params/demes/previous_demes/denisovan_simple_LS.yaml" 
+    denisovanNeanderthal_Dlow: "params/demes/denisovaNeanderthal_Dlow.yaml" 
+    denisovanNeanderthal_equal: "params/demes/denisovaNeanderthal_equal.yaml" 
+    denisovanNeanderthal_simple_closeDiv: "params/demes/denisovaNeanderthal_simple_closeDiv.yaml" 
+    denisovanNeanderthal_simple: "params/demes/denisovaNeanderthal_simple.yaml"
+    denisovanNeanderthal_simple_previous: "params/demes/denisovaNeanderthal_simple_previous.yaml"
