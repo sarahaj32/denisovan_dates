@@ -1,0 +1,10 @@
+name: sims
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - msprime
+  - python=3.7
+  - demes
+prefix: /global/scratch/users/sarahj32/software/miniconda3/envs/sims
