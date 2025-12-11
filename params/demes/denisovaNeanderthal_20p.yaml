@@ -69,12 +69,12 @@ demes:
 
 
 pulses:
-# - sources: [NEA]
-#   dest: OOA
-#   time: 45_000
-#   proportions: [0.04]
+- sources: [NEA]
+  dest: OOA
+  time: 45_000
+  proportions: [0.05]
 
 - sources: [DEN]
   dest: OOA
-  time: 45_000
+  time: 36_000
   proportions: [0.05]

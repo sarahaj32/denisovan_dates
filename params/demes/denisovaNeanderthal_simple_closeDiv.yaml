@@ -34,7 +34,7 @@ demes:
   ancestors: [ARC]
   start_time: 415_000
   epochs:
-  - {end_time: 0, start_size: 2000}
+  - {end_time: 0, start_size: 1000}
 - name: Altai
   description: sequenced Altai neanderthal lineage
   ancestors: [NEA]
@@ -44,13 +44,13 @@ demes:
 - name: Vindija
   description: sequenced Vindija neanderthal lineage
   ancestors: [NEA]
-  start_time: 105_000
+  start_time: 130_000
   epochs:
   - {start_size: 1000, end_time: 0}
 - name: Chagyrskaya
   description: sequenced Chagyrskaya neanderthal lineage
   ancestors: [NEA]
-  start_time: 150_000
+  start_time: 130_000
   epochs:
   - {start_size: 1000, end_time: 0}
 
@@ -62,17 +62,17 @@ demes:
   - {end_time: 0, start_size: 2000}
 - name: ALT_DEN
   description: sequenced Denisovan lineage
-  start_time: 300_000
+  start_time: 130_000
   ancestors: [DEN]
   epochs:
   - {end_time: 0, start_size: 2000}
 
 
 pulses:
-# - sources: [NEA]
-#   dest: OOA
-#   time: 45_000
-#   proportions: [0.04]
+- sources: [NEA]
+  dest: OOA
+  time: 50_000
+  proportions: [0.05]
 
 - sources: [DEN]
   dest: OOA
