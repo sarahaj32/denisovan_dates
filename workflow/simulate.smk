@@ -145,7 +145,7 @@ rule extract_archaics:
         bcftools view {output.full} -T {output.mask} -o {output.vcf}
         bcftools view {output.vcf} -Ob -o {output.gz}
         bcftools index {output.gz}
-        bcftools view {output.vcf} -Ob -o {output.full_gz}
+        bcftools view {output.full} -Ob -o {output.full_gz}
         bcftools index {output.full_gz}
         """
 
@@ -209,7 +209,7 @@ rule filter_ibdmix:
 rule annotate_archaic_variants:
     input:
         archaics="simdat/{sim}_{seed}/archaics/{sim}_sim_{archaic_ds}Archaic_{rep}.vcf",
-        script="add_annotations_to_archaic_observations.py"
+        script="helper_scripts/add_annotations_to_archaic_observations.py"
     output:
         annotated="simdat/{sim}_{seed}/archaics/{sim}_{archaic_ds}_annotatedArchaics_{rep}.txt"
         
@@ -228,7 +228,7 @@ rule remove_nonvariable_sites:
         bcftools view -s $samps -c 1 {input} > {output} 
         """
 
-# A rule to downsample to 220,000 SNPs (half of what is simulated)
+# A rule to downsample to 200,000 SNPs (half of what is simulated)
 rule downsample:
     input:
         vcf = "simdat/{sim}_{seed}/MH{nMH}_variable/{sim}_sim_{rep}.vcf",
@@ -280,6 +280,7 @@ rule find_intro_frags:
 #### A set of HMMix rules to call introgressed fragments ####
 
 # I create the outgroup files myself so that I can control that 0 is always ancestral and 1 is always the derived allele
+# and include homozygous positions
 rule create_outgroup:
     input:
         vcf = expand("simdat/{{sim}}_{{seed}}/clean/{{sim}}_sim_{rep}.vcf", rep = list(range(1,21))),
@@ -299,7 +300,6 @@ rule create_outgroup:
 
 rule create_ingroup:
     input:
-        # need to update the VCFs so that they have an actual reference and alternative allele
         vcfs = expand("simdat/{{sim}}_{{seed}}/clean/{{sim}}_sim_{rep}.vcf", rep = list(range(1,21))),
         outgroup = "simdat/{sim}_{seed}/hmmix/outgroup/outgroup_{nafr}Afr.txt"
     output:
@@ -393,7 +393,7 @@ rule annotate_frags:
     shell:
         "python {input.script} -b {input.frags} -i {input.annotations} -o {output}"
 
-# need to use this to collage fragments if NEA is included
+# need to use this to collate fragments if NEA is included
 rule classify_archaic_fragments:
     input:
         bed="simdat/{sim}_{seed}/archaic_{threshold}/fragments_anno/{sim}_hmmix.{nafr}Afr.{archaic_ds}Archaic.{nMH}NAMH_annotated_{rep}.bed",
@@ -414,6 +414,33 @@ rule classify_archaic_fragments:
         awk -v nd01="$nd01" -v nd10="$nd10" 'NR==1 || ($nd01 == 0 && $nd10 > 0)' {input.bed} > {output.ND10_full}
         """
 
+rule classify_archaic_fragments_singleNea:
+    input:
+        bed="simdat/{sim}_{seed}/archaic_{threshold}/fragments_anno/{sim}_hmmix.{nafr}Afr.{archaic_ds}Archaic.{nMH}NAMH_annotated_{rep}.bed",
+    output:
+        den_full="simdat/{sim}_{seed}/DEN/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.1NeaMostLikely_{rep}.bed",
+        nea_full="simdat/{sim}_{seed}/NEA/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.1NeaMostLikely_{rep}.bed",
+
+    shell:
+        """
+        nea=$(head -1 {input.bed} | tr '\t' '\n' | grep -n -x "Vindija33.19" | cut -d: -f1)
+        den=$(head -1 {input.bed} | tr '\t' '\n' | grep -n -x "Denisova" | cut -d: -f1)
+        awk -v d="$den" -v n="$nea" 'NR==1 || ($d > $n)' {input.bed} > {output.den_full} 
+        awk -v d="$den" -v n="$nea" 'NR==1 || ($d < $n)' {input.bed} > {output.nea_full}
+        """
+
+rule filter_hmmix_fragments:
+    input: 
+        "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.{type}_{rep}.bed"
+    output:
+        "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_hmmix.{threshold}.{nafr}Afr.{archaic_ds}Archaic.{type}.{length}k_{rep}.bed"
+    shell:
+        """
+        len=$(head -1 {input} | tr '\t' '\n' | grep -n -x "length" | cut -d: -f1)
+        min=$(({wildcards.length} * 1000))
+        awk -v l="$len" -v m="$min" 'NR==1 || ($l > m)' {input} > {output}
+        """
+        
 # this is the key of this method, create a matrix with the ancestry of each individual (0, 1, or 2 archaic haplotypes) at each position in the vcf
 rule create_ancestry_matrix:
     input:
@@ -459,10 +486,18 @@ rule calculate_D:
 
     log: "logs/D_calculation_{sim}_{seed}_{archaic}_{nMH}NAMH_{frag_source}_{pos}_{rep}.log"
     resources:
-        time='30:00:00'
+        time='48:00:00'
     shell:
         "python {input.script} -i {input.anc} -o {output} > {log} 2>&1 "
 
+rule get_results:
+    input:
+        files=expand("simdat/{{sim}}_{{seed}}/{{archaic}}/curve/results/{{sim}}_{{nMH}}NAMH_{{frag_source}}_{{pos}}_{rep}_D.txt",  rep = list(range(1,chroms))),
+        script="helper_scripts/simulation_ancD.R"
+    output:
+        "simdat/results/{sim}_{nMH}NAMH_{frag_source}_{pos}_{archaic}_{seed}_min{anal_min}_inferred_parameters.txt"
+    shell:
+        "Rscript {input.script} {input.files[0]} {wildcards.archaic} {wildcards.seed} {wildcards.anal_min}"
 
 # get summary statistics
 rule summarize_true_ancestry:
@@ -491,6 +526,3 @@ rule summarize_inferred_performance:
         """
         Rscript {input.script} {input.truth[0]} {input.inf[0]} {output} {params.ploidy}
         """
-       #         if [ "{wildcards.frag_source}" = "ibdmix" ]; then ploidy="haploid"; else ploidy="diploid"; fi
-        # echo "{widlcards.frag_source}"
-        # echo $ploidy 
