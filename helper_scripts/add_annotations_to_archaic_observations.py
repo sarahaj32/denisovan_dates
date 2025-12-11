@@ -20,16 +20,12 @@ def get_nd(nea, den, der, rand=False):
         return("ND00")
     if rand:
         if nea_der == 0.5:
-            print("NEA RANDOME")
             nea_anno = random.randint(0, 1)
-            #print(nea_anno)
         else:
             assert(nea_der == 0 or nea_der == 1)
             nea_anno = int(nea_der)
         if den_der == 0.5:
-            print("DEN RANDOM")
             den_anno = random.randint(0, 1)
-            #print(den_anno)
         else:
             assert(den_der == 0 or den_der == 1)
             den_anno = int(den_der)
@@ -44,15 +40,11 @@ def get_nd(nea, den, der, rand=False):
 
 
 def annotate_archaics(infile, outfile, anc):
-    count = 0
 
     # read in the vcf
     with open(infile, "r") as f, open(outfile, "w") as of:
-        of.write("\t".join(["chrom", "pos", "ref", "alt", "derived", "altai", "vindija", "chagyrskaya", "denisova", "panTro5", "ancestral", "label", "original_label"]))
+        of.write("\t".join(["chrom", "pos", "ref", "alt", "derived", "altai", "vindija", "chagyrskaya", "denisova", "panTro5", "ancestral", "label", "original_label"]) + "\n")
         for line in f:
-            count += 1
-            if count > 200:
-                break
             # parse the header
             if line.startswith("##"):
                 continue
@@ -97,7 +89,8 @@ def annotate_archaics(infile, outfile, anc):
                 # print("OG_LABEL:")
                 # print(OG_label)
                 outline = "\t".join([info[chrom_idx], info[pos_idx], info[ref_idx], info[alt_idx], der_allele, altai_gt, vin_gt, chag_gt, den_gt, pan_gt, anc_indiv_gt, label, OG_label])
-                print(outline)
+                
+                of.write(outline + "\n")
 
 
 
