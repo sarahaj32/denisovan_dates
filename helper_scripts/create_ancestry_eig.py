@@ -1,6 +1,6 @@
 # a function that creates a geno-like file of ancestry at every position
 # inputs: a vcf that is used to determine each position of interest. Note, this is only used to determine positions so no genotype info is necessary
-#         a bed file with the archaic regions annotated. The first 4 positions must be haplotype, chrom, start, end
+#         a bed file with the archaic regions annotated. The first 4 positions must be haplotype (or ID if diploid), chrom, start, end
 # output:
 #         a text file with the ancestry label for each individual at each position. 0 = no archaic ancestry, 1 = heterozygous archaic ancestry, 2 = homozygous archaic ancestry
 
@@ -12,8 +12,8 @@ def read_bedfile(bed):
     hap_dict = defaultdict(list)
     with open(input_bed, 'r') as bed_file:
         hap_idx = 0
-        start_idx = 1
-        end_idx = 2
+        start_idx = 2
+        end_idx = 3
         for bed_line in bed_file:
             if "chrom" in bed_line:
                 bed_line = bed_line.strip().split("\t")
@@ -35,6 +35,7 @@ def read_bedfile(bed):
 
 def find_ancestry(hap_dict, input_vcf, output_txt, ploidy) -> None:
     count = 0 
+    print(ploidy)
     haps = len(hap_dict)
     with open(input_vcf, 'r') as vcf_file, open(output_txt, 'w') as out_file:
         for full_line in vcf_file:
@@ -62,9 +63,9 @@ def find_ancestry(hap_dict, input_vcf, output_txt, ploidy) -> None:
                     # for each individual, check if the position is in any of their introgressed fragments
                     # loop through every other individual * 2 (we want both haplotypes from each individual):
                     if ploidy == "haploid":
-                        p = 1
-                    elif ploidy == "diploid":
                         p = 2
+                    elif ploidy == "diploid":
+                        p = 1
                     else:
                         print(f"ploidy must be 'haploid' or 'diploid', you provided {ploidy}")
                         break
@@ -87,10 +88,11 @@ def find_ancestry(hap_dict, input_vcf, output_txt, ploidy) -> None:
                                 # print("NEW")
                                 # print(hap_dict[ind])
                             #hap_dict[ind][0][0]
-                            # if hte position is in an introgressed fragment, set ancestry label to 1
+                            # if the position is in an introgressed fragment, set ancestry label to 1
                             if pos >= hap_dict[ind][0][0] and pos <= hap_dict[ind][0][1]:
                                 ancestry_labs[ind] = 1
-                        if ploidy == "diploid":
+                        # in the case that we are counting up the arhcaic ancestry on both haplotypes
+                        if ploidy == "haploid":
                             if ind + 1 in hap_dict:
                                 while pos > hap_dict[ind + 1][0][1]:
                                     # print("TESTING")
@@ -105,7 +107,7 @@ def find_ancestry(hap_dict, input_vcf, output_txt, ploidy) -> None:
                                 if pos >= hap_dict[ind + 1][0][0] and pos <= hap_dict[ind + 1][0][1]:
                                 # print(f"Position {pos} on chromosome {chrom} is in introgressed fragment in individual {ind} on haplotype 2")
                                     ancestry_labs[ind] += 1
-                if ploidy == "diploid":
+                if ploidy == "haploid":
                     filtered = ancestry_labs[::2]
                 else:
                     filtered = ancestry_labs
@@ -134,6 +136,7 @@ if __name__ == "__main__":
     # output_txt = "output_ancestry.txt"
 
     hap_dict = read_bedfile(input_bed)
+    print(hap_dict.keys())
     print("Hap dict created")
     #print(hap_dict)
     find_ancestry(hap_dict, input_vcf, output_txt, ploidy)
