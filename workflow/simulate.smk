@@ -6,9 +6,9 @@ chroms = 21
 
 def get_ploidy(wildcards):
     if wildcards.frag_source == "ibdmix":
-        return "haploid"
-    else:
         return "diploid"
+    else:
+        return "haploid"
 
 ##### CHECK_mutSamps #####
 # can now add in laurits' exact simulations
@@ -201,9 +201,10 @@ rule filter_ibdmix:
         "simdat/{sim}_{seed}/{archaic}/fragments/{sim}_{nMH}NAMH_ibdmix_{rep}.bed", 
     shell:
         """
-        awk '{{len=$4-$3; print $0"\t"len}}' {input} | \
-        awk 'BEGIN{{OFS="\t"}} NR==1 {{print "hap", $0; next}} {{split($1,a,"_"); print a[2]-1, $0}}' | \
-        awk '$6>4 || $3 == "chrom"' | {{ head -n1; tail -n +2 | sort -k1,2n -k4,4n ; }} > {output}
+        awk '{{len=$4-$3; if (len >= 50000 && $5>4) print $0"\t"len}}' {input} | \
+        awk '{{split($1,a,"_"); print a[2]-1 "\t" $0 "\t" $1}}' | \
+        cut -f1,3- | \
+        sort -k1,2n -k4,4n > {output}
         """
 
 rule annotate_archaic_variants:
